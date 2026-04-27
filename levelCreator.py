@@ -52,6 +52,20 @@ def screen_to_tile_int(sx, sy):
     return int(wx // TILESIZE), int(wy // TILESIZE)
 
 
+from level import AreaType, AREA_COLORS, AREA_TYPES
+
+# ── area state (mirrors wall state) ──────────────────────────────────────────
+area_type_idx  = 0
+area_state     = "idle"
+area_drag_start = None
+area_preview   = None
+sel_area       = None
+area_move_off  = None
+
+if not hasattr(level, "areas"):
+    level.areas = []
+
+
 # ── wall helpers ──────────────────────────────────────────────────────────────
 
 wall_state   = "idle"
@@ -263,6 +277,27 @@ def draw_lights():
         lbl = font.render(light.__class__.__name__[:-5], True, col)
         screen.blit(lbl, (int(sp.x) + 8, int(sp.y) - 8))
 
+def draw_areas():
+    area_font = pygame.font.SysFont("monospace", 12)
+    for i, a in enumerate(level.areas):
+        tx, ty, tw, th, atype = a
+        color = AREA_COLORS[atype]
+        draw_rect_world(tx, ty, tw, th, color, alpha=60)
+        col = (255, 255, 0) if i == sel_area else color
+        draw_rect_outline(tx, ty, tw, th, col, 2 if i == sel_area else 1)
+
+        # label in inner top-left
+        sp = world_to_screen(tx * TILESIZE, ty * TILESIZE)
+        lbl = area_font.render(atype.value, True, col)
+        screen.blit(lbl, (int(sp.x) + 4, int(sp.y) + 4))
+
+    # preview while dragging
+    if area_state == "drawing" and area_preview:
+        tx, ty, tw, th = area_preview
+        color = AREA_COLORS[AREA_TYPES[area_type_idx]]
+        draw_rect_world(tx, ty, tw, th, color, alpha=40)
+        draw_rect_outline(tx, ty, tw, th, color, 2)
+
 def draw_light_preview():
     mworld = screen_to_world(*pygame.mouse.get_pos())
     sp = world_to_screen(mworld.x, mworld.y)
@@ -273,7 +308,7 @@ def draw_light_preview():
 def draw_ui():
     cam_cx = (cam.x + RES.x/2*TILESIZE/TILE) / TILESIZE
     cam_cy = (cam.y + RES.y/2*TILESIZE/TILE) / TILESIZE
-    mode_str = {"walls":"WALLS","nodes":"NODES","lights":"LIGHTS"}[editor_mode]
+    mode_str = {"walls":"WALLS","nodes":"NODES","lights":"LIGHTS", "areas":"AREAS"}[editor_mode]
 
     if editor_mode == "walls":
         hint  = "[LMB drag] Place  [RMB] Select/Move  [DEL] Delete  [Wheel] Zoom  [C] Clear"
@@ -281,6 +316,9 @@ def draw_ui():
     elif editor_mode == "nodes":
         hint  = "[LMB] Place  [RMB] Select/Move  [DEL] Delete  [C] Clear"
         extra = f"Nodes: {len(level.nodes)}  Edges: {len(nav_edges)}"
+    elif editor_mode == "areas":
+        hint  = "[LMB drag] Place  [RMB] Select/Move  [DEL] Delete  [Q/E] Type  [C] Clear"
+        extra = f"Type: {AREA_TYPES[area_type_idx].value}  Areas: {len(level.areas)}"
     else:
         hint  = "[LMB] Place  [RMB] Select/Move  [DEL] Delete  [Q/E] Type  [C] Clear"
         extra = f"Type: {LIGHT_TYPES[light_type_idx]}  Lights: {len(level.lights)}"
@@ -326,7 +364,7 @@ while running:
 
         # TAB toggle
         if e.type == pygame.KEYDOWN and e.key == pygame.K_TAB:
-            modes = ["walls","nodes","lights"]
+            modes = ["walls", "nodes", "lights", "areas"]
             editor_mode = modes[(modes.index(editor_mode)+1) % len(modes)]
             selected_idx = sel_node = sel_light = None
             wall_state = "idle"
@@ -442,6 +480,57 @@ while running:
                 if e.button == 3 and sel_light is not None:
                     level.save(); light_move_off = None
 
+        elif editor_mode == "areas":
+            if e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_q:
+                    area_type_idx = (area_type_idx - 1) % len(AREA_TYPES)
+                if e.key == pygame.K_e:
+                    area_type_idx = (area_type_idx + 1) % len(AREA_TYPES)
+                if e.key == pygame.K_DELETE and sel_area is not None:
+                    level.areas.pop(sel_area); sel_area = None; level.save()
+                if e.key == pygame.K_c:
+                    level.areas.clear(); sel_area = None; level.save()
+
+            if e.type == pygame.MOUSEBUTTONDOWN:
+                sx, sy = pygame.mouse.get_pos()
+                tile = screen_to_tile_int(sx, sy)
+                if e.button == 1 and area_state == "idle":
+                    sel_area = None
+                    area_state = "drawing"
+                    area_drag_start = tile
+                    area_preview = (*tile, 1, 1)
+                elif e.button == 3 and area_state == "idle":
+                    # find topmost area containing tile
+                    hit = None
+                    for i, a in enumerate(level.areas):
+                        if point_in_rect(tile[0], tile[1], a[:4]):
+                            hit = i
+                    if hit is not None:
+                        if hit == sel_area:
+                            sel_area = None; level.save()
+                        else:
+                            sel_area = hit
+                            r = level.areas[hit]
+                            area_move_off = (tile[0] - r[0], tile[1] - r[1])
+                            area_state = "moving"
+                    else:
+                        if sel_area is not None:
+                            sel_area = None; level.save()
+
+            if e.type == pygame.MOUSEBUTTONUP:
+                sx, sy = pygame.mouse.get_pos()
+                tile = screen_to_tile_int(sx, sy)
+                if e.button == 1 and area_state == "drawing":
+                    if area_drag_start:
+                        nx, ny, nw, nh = normalize_rect(*area_drag_start, *tile)
+                        level.areas.append([nx, ny, nw, nh, AREA_TYPES[area_type_idx]])
+                        level.save()
+                    area_state = "idle"; area_drag_start = None; area_preview = None
+                elif e.button == 3 and area_state == "moving":
+                    area_state = "idle"; level.save(); area_move_off = None
+
+        
+
     # ── per-frame updates ─────────────────────────────────────────────────
     if editor_mode == "walls":
         if wall_state == "drawing" and drag_start:
@@ -467,6 +556,17 @@ while running:
         if sel_light is not None and light_move_off is not None:
             mworld = screen_to_world(*pygame.mouse.get_pos())
             level.lights[sel_light].pos = mworld + light_move_off
+
+    elif editor_mode == "areas":
+        if area_state == "drawing" and area_drag_start:
+            sx, sy = pygame.mouse.get_pos()
+            area_preview = normalize_rect(*area_drag_start, *screen_to_tile_int(sx, sy))
+        if area_state == "moving" and sel_area is not None:
+            sx, sy = pygame.mouse.get_pos()
+            tile = screen_to_tile_int(sx, sy)
+            a = level.areas[sel_area]
+            level.areas[sel_area][0] = tile[0] - area_move_off[0]
+            level.areas[sel_area][1] = tile[1] - area_move_off[1]
 
     # ── camera ────────────────────────────────────────────────────────────
     keys  = pygame.key.get_pressed()
@@ -494,6 +594,7 @@ while running:
         draw_rect_outline(pr[0],pr[1],pr[2],pr[3], col, 2)
 
     draw_lights()
+    draw_areas()
     if editor_mode == "lights" and sel_light is None:
         draw_light_preview()
 

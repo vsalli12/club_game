@@ -123,7 +123,7 @@ class Weapon:
             Bullet(self, v2(x,y), baseRot, math.radians(self.getSpread()), self.damage)
             self.mag -= 1
 
-            if self.owner.player:
+            if self.owner.player and self.app.DOLIGHTS:
                 MuzzleFlash(self.app, self)
 
     def getSpread(self):

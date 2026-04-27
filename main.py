@@ -24,7 +24,7 @@ from los.los_walls import build_and_cache
 from los.los_draw import draw as los_draw
 from objects.pill import Pill
 from enemies.enemy import Enemy
-from level import Level
+from level import Level, AreaType
 from nav import NavGraph
 from light import StaticLight, make_muzzle_flash_frames
 from scorepopup import ScorePopup
@@ -114,6 +114,15 @@ class App:
         self.musicChannel = pygame.Channel(0)
         self.Player = Player
 
+        tileTexture = pygame.image.load("texture/tile2.jpg").convert()
+        self.tileTexture = self.scaleTextureSmooth(tileTexture, desiredHeight=100)
+
+        tileTexture2 = pygame.image.load("texture/tile1.jpg").convert()
+        self.tileTexture2 = self.scaleTextureSmooth(tileTexture2, desiredHeight=100)
+
+        tileTexture3 = pygame.image.load("texture/tile3.jpg").convert()
+        self.tileTexture3 = self.scaleTextureSmooth(tileTexture3, desiredHeight=100)
+
         self.enemiesSpottedPlayer = False
         self.sightToPlayer = False
         self.enemiesSeePlayer = 0
@@ -174,6 +183,12 @@ class App:
         #self.loop.cutoff = None
         self.prevSpotted = False
         self.stateAnim = 0
+
+        self.level = Level.load()
+
+        #self.mapAreas = level.areas
+        TILESIZE = 100
+        self.mapAreas = [(pygame.Rect(a[0] * TILESIZE, a[1] * TILESIZE, a[2] * TILESIZE, a[3] * TILESIZE), a[4]) for a in self.level.areas]
 
         self.defDialog = dialogue = [
                 "HELLO. I HAVE IDENTIFIED YOU AS A POTENTIAL MATING PARTNER.",
@@ -245,6 +260,9 @@ class App:
 
     def scaleTexture(self, image, desiredHeight = None, desiredWidth = None):
         return pygame.transform.scale_by(image, desiredHeight*self.RENDER_SCALE / image.get_height() if desiredHeight else desiredWidth*self.RENDER_SCALE / image.get_width())
+    
+    def scaleTextureSmooth(self, image, desiredHeight = None, desiredWidth = None):
+        return pygame.transform.smoothscale_by(image, desiredHeight*self.RENDER_SCALE / image.get_height() if desiredHeight else desiredWidth*self.RENDER_SCALE / image.get_width())
 
     def renderLights(self):
         self.light_frame_time += self.dt
@@ -278,20 +296,20 @@ class App:
         print("Generating lights.")
         
         t = time.time()
-        level = Level.load()
+        
 
         self.currLoad = "Generating lights"
         
         self.loadPoint = 0
 
-        self.maxLoad = len(level.lights) + len(self.floorRects)
+        self.maxLoad = len(self.level.lights) + len(self.floorRects)
 
         self.mapCorner = v2(
             min(w.rect.left for w in self.walls),
             min(w.rect.top  for w in self.walls)
         )
 
-        for i, LIGHT in enumerate(level.lights):
+        for i, LIGHT in enumerate(self.level.lights):
             self.loadPoint += 1
             print(f"Light {i}: Making wall mask")
             r = int(LIGHT.radius * self.RENDER_SCALE)
@@ -310,7 +328,7 @@ class App:
         rect_lights  = {}
         rect_dynamic = {}
         for i, r in enumerate(self.floorRects):
-            touching = [L for L in level.lights if light_touches_rect(L, r)]
+            touching = [L for L in self.level.lights if light_touches_rect(L, r)]
             rect_lights[i]  = touching
             rect_dynamic[i] = any(not L.is_static for L in touching)
 
@@ -338,7 +356,7 @@ class App:
                 rect_surf.blit(scaled, blit_pos, special_flags=pygame.BLEND_RGB_ADD)
             return rect_surf
 
-        NUM_FRAMES = len(level.lights[0].frames) if level.lights else 1
+        NUM_FRAMES = len(self.level.lights[0].frames) if self.level.lights else 1
 
         self.light_static = []
         self.light_frames = [[] for _ in range(NUM_FRAMES)]
@@ -363,6 +381,14 @@ class App:
         self.light_frame_time = 0
         print(f"Lights drawn. Elapsed time: {time.time() - t:.1f}s")
         
+    def checkPositionArea(self, pos):
+        for rect, a_t in self.mapAreas:
+            if rect.collidepoint(pos):
+                return a_t
+        else:
+            return None
+        
+
 
 
     def incrementSight(self):
@@ -386,6 +412,8 @@ class App:
 
 
     def loadWalls(self):
+
+        
         SAVE_FILE = "level.json"
 
         if os.path.exists(SAVE_FILE):
@@ -397,14 +425,46 @@ class App:
         TILESIZE = 100
 
         self.floorRects = []
+        self.floorSurfs = []
+        self.maxLoad = len(fr)
+        self.loadPoint = 0
         for x,y,w,h in fr:
             r = pygame.Rect(v2(x,y) * TILESIZE, v2(w,h) * TILESIZE)
             self.floorRects.append(r)
+
+            s = pygame.Surface(v2(r.size) * self.RENDER_SCALE)
+            self.paintFloor(s, r.topleft)
+            
+            self.floorSurfs.append((s, r.topleft))
+            self.loadPoint += 1
 
             
         self.walls = []
         for x,y,w,h in l:
             self.walls.append(Wall(self, (x,y), (w,h)))
+
+    def paintFloor(self, s, topleft):
+        x = 0
+        while x < s.get_width():
+            y = 0
+            while y < s.get_height():
+
+                pos = v2(x,y) / self.RENDER_SCALE + topleft + [50,50]
+
+                t = self.checkPositionArea(pos)
+                if t == AreaType.DANCEFLOOR:
+                    texture = self.tileTexture
+                elif t == AreaType.OUTSIDE:
+                    texture = self.tileTexture3
+                else:
+                    texture = self.tileTexture2
+
+                s.blit(texture, (x,y))
+                y += self.tileTexture.get_height()
+            x += self.tileTexture.get_width()
+
+
+
 
     def addEntity(self, ent):
         if isinstance(ent, (Player, Enemy)):
@@ -738,8 +798,12 @@ class App:
                 r.topleft = self.convertPos(r2.topleft)
                 r.size = v2(r2.size) * self.RENDER_SCALE
 
-                pygame.draw.rect(self.screen, (50,50,50), r)
+                #pygame.draw.rect(self.screen, (50,50,50), r)
                 pygame.draw.rect(self.los_surf, (20,20,20), r)
+
+            for surf, topleft in self.floorSurfs:
+                pos = self.convertPos(topleft)
+                self.screen.blit(surf, pos)
 
             
 

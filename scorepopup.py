@@ -8,7 +8,7 @@ class ScorePopup:
         self.label = ""
         self.labelRepeated = 0
         self.lifetime = 0.0
-        self.max_lifetime = 2.5
+        self.max_lifetime = 1.5
         self.anim = 0.0       # 0→1 pop-in
         self.anim_speed = 8.0
         self.nudge = 0.0      # vertical nudge, decays

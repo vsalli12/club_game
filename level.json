@@ -381,91 +381,6 @@
       "falloff": 2.0
     },
     {
-      "type": "PulseLight",
-      "pos": [
-        -374.0907407407411,
-        -394.2718253968251
-      ],
-      "radius": 1000,
-      "color": [
-        255,
-        0,
-        0
-      ],
-      "intensity": 1.0,
-      "oscillations": 4.0,
-      "min_intensity": 0.1,
-      "falloff": 2.0
-    },
-    {
-      "type": "PulseLight",
-      "pos": [
-        391.74259259259236,
-        -405.9384920634918
-      ],
-      "radius": 1000,
-      "color": [
-        255,
-        0,
-        0
-      ],
-      "intensity": 1.0,
-      "oscillations": 4.0,
-      "min_intensity": 0.1,
-      "falloff": 2.0
-    },
-    {
-      "type": "PulseLight",
-      "pos": [
-        404.24259259259236,
-        319.0615079365082
-      ],
-      "radius": 1000,
-      "color": [
-        255,
-        0,
-        0
-      ],
-      "intensity": 1.0,
-      "oscillations": 4.0,
-      "min_intensity": 0.1,
-      "falloff": 2.0
-    },
-    {
-      "type": "PulseLight",
-      "pos": [
-        -452.42407407407416,
-        309.0615079365082
-      ],
-      "radius": 1000,
-      "color": [
-        255,
-        0,
-        0
-      ],
-      "intensity": 1.0,
-      "oscillations": 4.0,
-      "min_intensity": 0.1,
-      "falloff": 2.0
-    },
-    {
-      "type": "PulseLight",
-      "pos": [
-        51.74259259259236,
-        -8.438492063491822
-      ],
-      "radius": 1000,
-      "color": [
-        255,
-        0,
-        0
-      ],
-      "intensity": 1.0,
-      "oscillations": 4.0,
-      "min_intensity": 0.1,
-      "falloff": 2.0
-    },
-    {
       "type": "StaticLight",
       "pos": [
         -206.0731481481489,
@@ -531,7 +446,7 @@
         -1550.0824074074064,
         3953.6409722222206
       ],
-      "radius": 1000,
+      "radius": 1300,
       "color": [
         255,
         10,
@@ -541,7 +456,7 @@
       "spread_deg": 90.0,
       "rotations": 1.0,
       "clockwise": true,
-      "falloff": 1.5
+      "falloff": 0.7
     },
     {
       "type": "RotatingLight",
@@ -549,7 +464,7 @@
         -1153.41574074074,
         3953.6409722222206
       ],
-      "radius": 1000,
+      "radius": 1300,
       "color": [
         255,
         10,
@@ -559,7 +474,7 @@
       "spread_deg": 90.0,
       "rotations": 1.0,
       "clockwise": false,
-      "falloff": 1.5
+      "falloff": 0.7
     },
     {
       "type": "StaticLight",
@@ -574,7 +489,86 @@
         255
       ],
       "intensity": 1.0,
-      "falloff": 2.0
+      "falloff": 0.7
+    },
+    {
+      "type": "StaticLight",
+      "pos": [
+        -1354.456960191484,
+        3695.703795036533
+      ],
+      "radius": 1500,
+      "color": [
+        255,
+        50,
+        50
+      ],
+      "intensity": 1.0,
+      "falloff": 0.7
+    },
+    {
+      "type": "StrobeLight",
+      "pos": [
+        -500.9139203829682,
+        -299.75907659360087
+      ],
+      "radius": 1000,
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "intensity": 1.0,
+      "oscillations": 4,
+      "duty": 0.5
+    },
+    {
+      "type": "StrobeLight",
+      "pos": [
+        -503.4139203829682,
+        200.24092340639913
+      ],
+      "radius": 1000,
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "intensity": 1.0,
+      "oscillations": 4,
+      "duty": 0.5
+    },
+    {
+      "type": "StrobeLight",
+      "pos": [
+        498.5860796170318,
+        197.74092340639913
+      ],
+      "radius": 1000,
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "intensity": 1.0,
+      "oscillations": 4,
+      "duty": 0.5
+    },
+    {
+      "type": "StrobeLight",
+      "pos": [
+        498.5860796170318,
+        -302.25907659360087
+      ],
+      "radius": 1000,
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "intensity": 1.0,
+      "oscillations": 4,
+      "duty": 0.5
     }
   ]
 }

@@ -298,3 +298,30 @@ def load_light_frames(light: Light) -> bool:
         pygame.surfarray.blit_array(surf, rgba[:, :, :3])
         light.frames.append(surf)
     return True
+
+def _crop_surface(surf):
+    arr = pygame.surfarray.array3d(surf)
+    mask = arr.max(axis=2) > 0
+    rows = np.any(mask, axis=1)
+    cols = np.any(mask, axis=0)
+    if not rows.any():
+        return surf, (0, 0)
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+    cropped = surf.subsurface((rmin, cmin, rmax - rmin + 1, cmax - cmin + 1)).copy()
+    return cropped, (rmin, cmin)  # offset needed to re-center at blit time
+
+def make_muzzle_flash_frames(steps=10):
+    frames = []
+    for i in range(steps):
+        t = i / (steps - 1)
+        f = 1.0 + t * 3.0
+        s = (1.0 - t) * 0.6
+        c = tuple(int(ch * s) for ch in (255, 180, 80))
+        spread = 120 - t * 70
+        surf = _make_cone_gradient(0, spread, c, f)
+        cropped, offset = _crop_surface(surf)
+        frames.append((cropped, offset))
+    return frames
+
+

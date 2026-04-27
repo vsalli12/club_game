@@ -26,7 +26,8 @@ from objects.pill import Pill
 from enemies.enemy import Enemy
 from level import Level
 from nav import NavGraph
-from light import StaticLight
+from light import StaticLight, make_muzzle_flash_frames
+from scorepopup import ScorePopup
 def blit_glitch(screen, image, pos, glitch = 2, diagonal = False, black_bar_chance = 15, black_bar_color = (0,0,0)):
     upper_pos = 0
     lower_pos = random.randint(2, 5)
@@ -160,7 +161,8 @@ class App:
         self.fadePhase = 2
         self.pillAmount = 0
 
-        
+        self.SCORE_POPUP = ScorePopup(self)
+        self.totalScore = 0
 
 
         self.dt = 0.016
@@ -204,8 +206,10 @@ class App:
         self.DOLIGHTS = True
 
         if self.DOLIGHTS:
+            self.currLoad = "Making muzzle flashes"
+            self.MUZZLE_FLASH_FRAMES = make_muzzle_flash_frames()
             self.generateLights("level.json")
-
+        self.muzzleFlashes = []
         self.currLoad = "Lights done"
 
         tHid = self.gunFont.render("HIDDEN", True, [255,255,255])
@@ -220,7 +224,8 @@ class App:
         self.los_surf = pygame.Surface(self.res)
         self.los_surf.set_colorkey((255, 255, 255))
 
-        self.nav = NavGraph.load("level.json", self.los_walls)
+        self.currLoad = "Loading navgraph"
+        self.nav = NavGraph.load("level.json", self.los_walls, self.RENDER_SCALE)
 
         self.currLoad = "Initting audio engine"
         self.AUDIOMIXER = AudioMixer(self, chunk_size=1024)
@@ -264,6 +269,10 @@ class App:
             if not screen_rect.colliderect((screen_pos, surf.get_size())):
                 continue
             self.screen.blit(surf, screen_pos, special_flags=pygame.BLEND_RGB_MULT)
+
+        for MF in self.muzzleFlashes:
+            MF.renderTo(self.screen)
+            MF.tick()
 
     def generateLights(self, level_file):
         print("Generating lights.")
@@ -357,10 +366,11 @@ class App:
 
 
     def incrementSight(self):
-        if not self.enemiesSpottedPlayer:
-            self.enemiesSeePlayer += self.dt
-            self.enemiesSeePlayer = min(1, self.enemiesSeePlayer)
 
+        self.enemiesSeePlayer += self.dt
+        self.enemiesSeePlayer = min(1, self.enemiesSeePlayer)
+
+        if not self.enemiesSpottedPlayer:
             index = self.enemiesSeePlayer // 0.125
             if index != self.alertIndex:
                 audio = self.playPositionalAudio("audio/sightalert.wav", self.player.pos, volume=1.2)
@@ -371,6 +381,8 @@ class App:
             if self.enemiesSeePlayer >= 1:
                 self.enemiesSpottedPlayer = True
                 self.playPositionalAudio("audio/spotted.wav", self.player.pos, volume=1.2)
+
+
 
 
     def loadWalls(self):
@@ -431,12 +443,12 @@ class App:
             return
 
         a = random.uniform(0, math.pi*2)
-        pos = random.choice(self.floorRects).center
+        pos = v2(random.choice(self.floorRects).center)
 
         if self.nav.can_see(pos, self.player.pos):
             return
 
-        bouncer = self.enemyTemp.duplicate(v2(pos))
+        bouncer = self.enemyTemp.duplicate(pos)
         self.WEAPON_USPS.duplicate(bouncer)
         self.addEntity(bouncer)
 
@@ -679,6 +691,10 @@ class App:
         pygame.display.flip()
         self.dt = self.clock.tick(30) / 1000.0
 
+    def grantScore(self, amount, label=""):
+        self.totalScore += amount
+        self.SCORE_POPUP.grant(amount, label)
+
 
     def run(self):
         while True:
@@ -711,7 +727,7 @@ class App:
             
             #self.handleMusic()
 
-            #self.spawnEnemies()
+            self.spawnEnemies()
 
             
 
@@ -740,7 +756,11 @@ class App:
             if self.sightToPlayer:
                 self.incrementSight()
             else:
-                self.enemiesSeePlayer -= self.dt*0.1
+                if self.enemiesSpottedPlayer:
+                    self.enemiesSeePlayer -= self.dt*0.25
+                else:
+                    self.enemiesSeePlayer -= self.dt
+
                 self.enemiesSeePlayer = max(0, self.enemiesSeePlayer)
                 if self.enemiesSeePlayer > 0:
                     self.alertIndex = self.enemiesSeePlayer // 0.125
@@ -791,20 +811,13 @@ class App:
             for x in self.walls:
                 x.render()
 
-            
-
-            #debugPath = self.nav.get_path(self.player.pos, v2(0,0))
-#
-            #lp = self.player.pos
-            #for x in debugPath + [v2(0,0)]:
-            #    pygame.draw.line(self.screen, [255,0,0], lp - self.camPD, x - self.camPD)
-            #    lp = x
-#
-#
-            #self.debugText(f"PATH: {len(debugPath)}")
-
-            
-
+            if False: # DEBUG PATH
+                debugPath = self.nav.get_path(self.player.pos, v2(0,0))
+                lp = self.player.pos
+                for x in debugPath + [v2(0,0)]:
+                    pygame.draw.line(self.screen, [255,0,0], self.convertPos(lp), self.convertPos(x))
+                    lp = x
+        
             if self.fadePhase < 2:
 
                 self.fadeTimer += self.dt
@@ -852,7 +865,7 @@ class App:
                 self.player.weapon.hudTick()
 
 
-            if pygame.mouse.get_visible() == self.player.ableToFire and False:
+            if pygame.mouse.get_visible() == self.player.ableToFire:
                 pygame.mouse.set_visible(not self.player.ableToFire)
 
             self.debugText(f"AUDIO: {len(self.AUDIOMIXER.audio_sources)}")
@@ -864,6 +877,9 @@ class App:
 
             self.drawHud()
             self.drawHiddenHud()
+
+            self.SCORE_POPUP.tick()
+            self.SCORE_POPUP.render()
 
             self.drawTimer()
 

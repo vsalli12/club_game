@@ -21,9 +21,8 @@ class Enemy(ParentActor):
 
         self.LOS = self.app.nav.can_see(self.pos, self.app.player.pos)
 
-        if self.app.enemiesSpottedPlayer and self.LOS:
+        if (self.app.enemiesSpottedPlayer and self.LOS) or self.shooting:
             self.botShoot()
-
             if self.shooting:
                 self.aimTimer -= self.app.dt
                 if self.aimTimer <= 0:
@@ -64,8 +63,6 @@ class Enemy(ParentActor):
 
     def botWalk(self):
 
-        
-
         d = self.pos.distance_to(self.app.player.pos)
 
 
@@ -79,7 +76,7 @@ class Enemy(ParentActor):
             self.running = False
             self.runOffset = 0
 
-        if self.LOS and d < 750 and not self.app.player.holster:
+        if self.LOS and d < 750 and (not self.app.player.holster or self.app.enemiesSpottedPlayer):
             self.app.sightToPlayer = True
 
         if self.shooting:

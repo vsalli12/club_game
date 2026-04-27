@@ -7,7 +7,7 @@ import numpy as np
 import math
 from bullet import Bullet
 from animationHelper import *
-
+from muzzleflash import MuzzleFlash
 class Weapon:
     def __init__(self, app, player, **kwargs):
         texture = kwargs.get("texture", "texture/ak47.png")
@@ -100,7 +100,7 @@ class Weapon:
         return self.meleeTimer > 0
 
     def bulletSpawnPoint(self):
-        return self.BLITPOS + v2(math.sin((90-self.FINALROTATION) * math.pi / 180), -(math.cos((90-self.FINALROTATION) * math.pi / 180))) * self.image.get_width()/2.3 #
+        return self.BLITPOS + v2(math.sin((90-self.FINALROTATION) * math.pi / 180), -(math.cos((90-self.FINALROTATION) * math.pi / 180))) * self.image.get_width()/1.7 #
 
     def holdToFire(self):
         if self.fireTimer <= 0 and self.mag > 0 and not self.isReloading() and not self.isMeleeing():
@@ -122,6 +122,9 @@ class Weapon:
 
             Bullet(self, v2(x,y), baseRot, math.radians(self.getSpread()), self.damage)
             self.mag -= 1
+
+            if self.owner.player:
+                MuzzleFlash(self.app, self)
 
     def getSpread(self):
         return 0.5 + self.recoil * 5

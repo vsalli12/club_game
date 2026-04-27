@@ -122,7 +122,7 @@ def can_see(ax, ay, bx, by, los_walls):
 # ---------------------------------------------------------------------------
 
 class NavGraph:
-    def __init__(self, nodes_tile, coords_world, edges, dist, next_hop, los_walls):
+    def __init__(self, nodes_tile, coords_world, edges, dist, next_hop, los_walls, render_scale = 1.0):
         """
         nodes_tile  : list of [tx, ty] tile coords (may be 0.5 increments)
         coords_world: np.ndarray (n,2) float64 world pixels
@@ -131,32 +131,31 @@ class NavGraph:
         next_hop    : np.ndarray (n,n) int32   next-hop table
         los_walls   : np.ndarray (N,4) float64 world pixel wall segments
         """
-        self.nodes_tile  = nodes_tile
-        self.coords      = coords_world
-        self.edges       = edges
-        self.dist        = dist
-        self.next_hop    = next_hop
-        self.walls       = los_walls
+        self.nodes_tile   = nodes_tile
+        self.coords       = coords_world
+        self.edges        = edges
+        self.dist         = dist
+        self.next_hop     = next_hop
+        self.walls        = los_walls
+        self.render_scale = render_scale
 
     # --- public query -------------------------------------------------------
 
     def can_see(self, start: v2, end: v2) -> bool:
-        ax,ay = start
-        bx,by = end
-        return bool(_can_see_jit(float(ax), float(ay), float(bx), float(by), self.walls))
+        rs = self.render_scale
+        return bool(_can_see_jit(
+            float(start.x) * rs, float(start.y) * rs,
+            float(end.x)   * rs, float(end.y)   * rs,
+            self.walls))
 
     def get_path(self, start: v2, end: v2) -> list:
-        """
-        start, end: world pixel v2.
-        Returns list[v2] in world pixels: [node_wp..., end].
-        Returns [end] if no path found.
-        """
         n = len(self.nodes_tile)
         if n == 0:
             return [v2(end)]
 
-        sx, sy = float(start.x), float(start.y)
-        ex, ey = float(end.x),   float(end.y)
+        rs = self.render_scale
+        sx, sy = float(start.x) * rs, float(start.y) * rs
+        ex, ey = float(end.x)   * rs, float(end.y)   * rs
 
         vis_s = _visible_from(sx, sy, self.coords, self.walls)
         vis_e = _visible_from(ex, ey, self.coords, self.walls)
@@ -181,7 +180,6 @@ class NavGraph:
         if best_s == -1 or best_cost == INF:
             return [v2(end)]
 
-        # reconstruct node sequence
         path_nodes = []
         cur = best_s
         visited = set()
@@ -193,43 +191,38 @@ class NavGraph:
             cur = int(self.next_hop[cur, best_e])
         path_nodes.append(best_e)
 
-        result = [v2(self.coords[i, 0], self.coords[i, 1]) for i in path_nodes]
+        # coords are render space; convert back to world space for callers
+        result = [v2(self.coords[i, 0] / rs, self.coords[i, 1] / rs) for i in path_nodes]
         result.append(v2(end))
         return result
 
     # --- build --------------------------------------------------------------
 
     @staticmethod
-    def build(nodes_tile, los_walls):
-        """
-        nodes_tile: list of [tx, ty] tile coords.
-        los_walls : np.ndarray (N,4) float64 world pixels.
-        """
+    def build(nodes_tile, los_walls, render_scale):
         n = len(nodes_tile)
         empty = NavGraph([], np.zeros((0, 2), dtype=np.float64), [],
-                         np.zeros((0, 0)), np.zeros((0, 0), dtype=np.int32),
-                         los_walls)
+                        np.zeros((0, 0)), np.zeros((0, 0), dtype=np.int32),
+                        los_walls, render_scale)
         if n == 0:
             return empty
 
-        # tile → world
-        coords_world = np.array(
-            [[t[0] * TILESIZE, t[1] * TILESIZE] for t in nodes_tile],
+        # Store coords in render space to match los_walls
+        coords_render = np.array(
+            [[t[0] * TILESIZE * render_scale, t[1] * TILESIZE * render_scale] for t in nodes_tile],
             dtype=np.float64)
 
-        vis = _build_visibility(coords_world, los_walls)
+        vis = _build_visibility(coords_render, los_walls)
 
         edges = [(i, j) for i in range(n) for j in range(i+1, n) if vis[i, j]]
 
-        # direct distance matrix
         direct = np.full((n, n), INF, dtype=np.float64)
         np.fill_diagonal(direct, 0.0)
-        # next_hop[i,j] initialised to direct neighbour j where edge exists, else -1
         next_hop = np.full((n, n), -1, dtype=np.int32)
         for i in range(n):
             next_hop[i, i] = i
         for i, j in edges:
-            d = math.dist(coords_world[i], coords_world[j])
+            d = math.dist(coords_render[i], coords_render[j])
             direct[i, j] = d
             direct[j, i] = d
             next_hop[i, j] = j
@@ -238,13 +231,13 @@ class NavGraph:
         dist = direct.copy()
         _floyd_warshall(dist, next_hop)
 
-        return NavGraph(nodes_tile, coords_world, edges, dist, next_hop, los_walls)
+        return NavGraph(nodes_tile, coords_render, edges, dist, next_hop, los_walls, render_scale)
 
     @staticmethod
-    def load(levelFile, los_walls):
+    def load(levelFile, los_walls, render_scale):
         """Load nav_nodes.json and build the graph."""
         nodes_tile = []
         if os.path.exists(levelFile):
             with open(levelFile) as f:
                 nodes_tile = json.load(f)["nodes"]
-        return NavGraph.build(nodes_tile, los_walls)
+        return NavGraph.build(nodes_tile, los_walls, render_scale)

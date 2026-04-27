@@ -113,6 +113,12 @@ class ParentActor:
         for i in range(1, 3):
             self.app.addEntity(Pill(self.app, self.pos.copy()))
 
+        if not self.player:
+            if not self.app.enemiesSpottedPlayer:
+                self.app.grantScore(50, "STEALTH KILL")
+            else:
+                self.app.grantScore(20, "LOUD KILL")
+
 
     
     def morph(self, image, eye_vert = 1.0):

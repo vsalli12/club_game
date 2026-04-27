@@ -37,7 +37,7 @@ class Pill:
 
         im = pygame.transform.rotate(self.im, rotMod + self.rot + self.vel.length() * 60 * self.app.dt)
 
-        self.app.screen.blit(im, self.pos - self.app.camPD - v2(im.get_size())/2 - [0, yAdd])
+        self.app.screen.blit(im, self.app.convertPos(self.pos - [0, yAdd]) - v2(im.get_size())/2)
 
         self.lifeTime += self.app.dt
         if self.lifeTime >= self.maxLife:

@@ -78,6 +78,7 @@ class Light:
         self.color = color
         self.intensity = intensity
         self.frames: list[pygame.Surface] = []
+        self.scaled_frames: list[pygame.Surface | None] = [None] * FRAMES
         if not load_light_frames(self):
             self._build_frames()
             save_light_frames(self)

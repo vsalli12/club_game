@@ -61,9 +61,11 @@ class Weapon:
         self.path = texture
         self.image = pygame.image.load(self.path).convert_alpha()
         self.image = trim_surface(self.image)
-        self.image = pygame.transform.scale_by(self.image, 60 * sizeMult / self.image.get_height())
+        self.image = self.app.scaleTexture(self.image, desiredHeight = 60 * sizeMult)
+        #self.image = pygame.transform.scale_by(self.image, 60 * sizeMult / self.image.get_height())
         self.imageR = pygame.transform.flip(self.image.copy(), True, False)
-        self.hudImage = pygame.transform.scale_by(self.image, 100 / self.image.get_height())
+        #self.hudImage = pygame.transform.scale_by(self.image, 100 / self.image.get_height())
+        self.hudImage = self.app.scaleTexture(self.image, desiredHeight = 100)
         self.hudImage = colorize(self.hudImage, (255,255,255))
         self.hudImage.set_alpha(100)
         self.hudImageH = self.hudImage.copy()
@@ -113,7 +115,7 @@ class Weapon:
             self.app.PARTICLESYSTEM.create_muzzle_flash(x,y, r)
 
             if self.owner.player:
-                mp = self.app.mouse_pos + self.app.camPD
+                mp = self.app.inverseConvertPos(self.app.mouse_pos)
                 baseRot = (math.atan2(mp.y - self.BLITPOS.y, mp.x - self.BLITPOS.x)) # 
             else:
                 baseRot = r
@@ -152,10 +154,10 @@ class Weapon:
         if self.isReloading():
             progress = (self.reloadTime - self.reloadTimer) / self.reloadTime
 
-            mousePos = self.app.mouse_pos
+            mousePos = self.app.inverseConvertPos(self.app.mouse_pos)
             radius = 30
             rect = pygame.Rect(0, 0, radius * 2, radius * 2)
-            rect.center = mousePos
+            rect.center = self.app.convertPos(mousePos)
 
             start_angle = math.pi/2 + progress * 2 * math.pi
             end_angle = 5*math.pi/2
@@ -164,8 +166,7 @@ class Weapon:
 
         else:
             
-
-            mp = self.app.mouse_pos + self.app.camPD
+            mp = self.app.inverseConvertPos(self.app.mouse_pos)
             spawnPoint = self.BLITPOS
             dist = (mp - spawnPoint).length()
 
@@ -185,7 +186,7 @@ class Weapon:
                 dMod = 1 - 0.03 * abs(j)
                 point1 = spawnPoint + v2(math.sin(math.radians(baseRot + i)), -math.cos(math.radians(baseRot + i))) * (1-diff2) * dist
                 point2 = spawnPoint + v2(math.sin(math.radians(baseRot + i)), -math.cos(math.radians(baseRot + i))) * (1+diff2) * dist * dMod
-                pygame.draw.line(self.app.screen, (255,255,255), point1 - self.app.camPD, point2 - self.app.camPD, 3)
+                pygame.draw.line(self.app.screen, (255,255,255), self.app.convertPos(point1), self.app.convertPos(point2), 3)
 
 
         #baseRot2 = 90 - self.FINALROTATION
@@ -244,7 +245,7 @@ class Weapon:
 
 
             elif not self.owner.running:
-                mouse_world = self.app.camPD + self.app.mouse_pos
+                mouse_world = self.app.inverseConvertPos(self.app.mouse_pos)
                 r = math.degrees(self.app.getAngleFrom(self.owner.pos, v2(mouse_world)))
 
                     
@@ -334,4 +335,5 @@ class Weapon:
         tempim = self.rotatedImage
 
         self.BLITPOS = pos + self.holdingOut + v2(xA,yA + self.owner.breatheY + 50 - weaponBreathe*3)
-        self.app.screen.blit(tempim, self.BLITPOS - v2(tempim.get_size()) / 2 - self.app.camPD)
+        BP = self.app.convertPos(self.BLITPOS)
+        self.app.screen.blit(tempim, BP - v2(tempim.get_size()) / 2)

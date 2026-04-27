@@ -320,6 +320,23 @@ class AudioMixer:
         _ = resample_1ch_nb(dummy_1ch, 16)
         _ = resample_2ch_nb(dummy_chunk, 16)
 
+
+    
+    def _warmup_numba(self):
+        print("Warming up audio engine")
+        t = time.time()
+        dummy = np.zeros((self.chunk_size, 2), dtype=np.float32)
+        dummy_1ch = np.zeros(self.chunk_size, dtype=np.float32)
+        lowpass_1ch_nb(dummy_1ch, np.float32(0.0), np.float32(0.5))
+        lowpass_2ch_nb(dummy, np.float32(0.0), np.float32(0.0), np.float32(0.5))
+        mix_chunk_nb(dummy.copy(), dummy, np.float32(1.0), np.float32(1.0), np.float32(1.0))
+        auto_gain_nb(dummy.copy(), np.float32(0.7))
+        resample_1ch_nb(dummy_1ch, 16)
+        resample_2ch_nb(dummy, 16)
+        dummy_src = AudioSource(np.zeros((self.chunk_size * 4, 2), dtype=np.float32), self.sample_rate, self.sample_rate)
+        get_next_chunk_slowmo(dummy_src.data, 0.0, self.chunk_size, 1.0, False, np.float32(0.0), np.float32(0.0), None, self.sample_rate)
+        print(f"Audio engine initted. Elapsed time: {time.time() - t:.1f}")
+
     def playPositionalAudio(self, audio, pos = None, volume=1.0, loop = False):
         audioFallOffMaxDist = 6000.0
         if isinstance(audio, str):

@@ -18,6 +18,7 @@ class ParentActor:
 
         self.app = app
         self.pos = pos
+        self.BLITPOS = pos.copy()
         self.dvel = v2(0,0)
         self.vel = v2(0,0)
         self.speed = 500
@@ -171,11 +172,14 @@ class ParentActor:
         image = trim_surface(image)
         image = self.morph(image, eye_vert = 1.2)
         imageBat = self.morph(image, eye_vert = 0.1)
-        self.image = pygame.transform.scale_by(image, 100 / image.get_height())
-        self.hudImage = pygame.transform.scale_by(image, 500 / image.get_height())
-        self.image = outline_surface(self.image, 5)
-        self.imageBat = pygame.transform.scale_by(imageBat, 100 / imageBat.get_height())
-        self.imageBat = outline_surface(self.imageBat, 5)
+        #self.image = pygame.transform.scale_by(image, 100 / image.get_height())
+        self.image = self.app.scaleTexture(image, desiredHeight = 100)
+        #self.hudImage = pygame.transform.scale_by(image, 500 / image.get_height())
+        self.hudImage = self.app.scaleTexture(image, desiredHeight = 500)
+        self.image = outline_surface(self.image, int(5 * self.app.RENDER_SCALE))
+        #self.imageBat = pygame.transform.scale_by(imageBat, 100 / imageBat.get_height())
+        self.imageBat = self.app.scaleTexture(imageBat, desiredHeight = 100)
+        self.imageBat = outline_surface(self.imageBat, int(5 * self.app.RENDER_SCALE))
 
     def AIWeaponPointingAtPlayer(self):
         spawnpoint = self.weapon.bulletSpawnPoint()
@@ -197,7 +201,7 @@ class ParentActor:
     def render(self):
         shadowPos = (self.hitBox.centerx, self.hitBox.bottom)
         r = pygame.Rect((0,0), (80, 40))
-        r.center = shadowPos - self.app.camPD
+        r.center = self.app.convertPos(shadowPos)
         pygame.draw.ellipse(self.app.screen, (20,20,20), r)
 
         breathingMod = 1
@@ -275,5 +279,6 @@ class ParentActor:
         holdout = v2(0,0) if not self.weapon else self.weapon.holdingOut
 
         self.BLITPOS = self.pos + holdout*0.4 + v2(-self.xComponent, -self.yComponent + self.breatheY - yAdd)
+        BP = self.app.convertPos(self.BLITPOS)
 
-        self.app.screen.blit(tempIm, self.BLITPOS - self.app.camPD - v2(tempIm.get_size()) / 2)
+        self.app.screen.blit(tempIm, BP - v2(tempIm.get_size()) / 2)

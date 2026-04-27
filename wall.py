@@ -30,5 +30,6 @@ class Wall:
     
     def render(self):
         r = self.rect.copy()
-        r.topleft = self.rect.topleft - self.app.camPD
-        pygame.draw.rect(self.app.screen, (20,0,0), r)
+        r.topleft = self.app.convertPos(self.rect.topleft)
+        r.size = v2(self.rect.size) * self.app.RENDER_SCALE
+        pygame.draw.rect(self.app.screen, (0,0,0), r)

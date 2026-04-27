@@ -48,19 +48,41 @@ def blit_glitch(screen, image, pos, glitch = 2, diagonal = False, black_bar_chan
 class App:
     
     def __init__(self):
-        self.res = v2(2560,1440)
-        self.screen = pygame.display.set_mode((self.res.x, self.res.y),  ) #pygame.SCALED | pygame.FULLSCREEN
+        self.res = v2(1920,1080)
+        self.RENDER_SCALE = self.res.x / 2560
+        self.screen = pygame.display.set_mode((self.res.x, self.res.y), pygame.SCALED | pygame.FULLSCREEN) #
         self.clock = pygame.time.Clock()
         self.keypress = []
         self.keypress_held_down = []
         pygame.font.init()
         pygame.mixer.init()
-        self.font = pygame.Font("texture/agencyb.ttf", 30)
-        self.fontSmaller = pygame.Font("texture/agencyb.ttf", 20)
-        self.titleFont = pygame.Font("texture/agencyb.ttf", 20)
+        self.font = pygame.Font("texture/agencyb.ttf", int(30*self.RENDER_SCALE))
+        self.fontSmaller = pygame.Font("texture/agencyb.ttf", int(20*self.RENDER_SCALE))
+        self.titleFont = pygame.Font("texture/agencyb.ttf", int(20*self.RENDER_SCALE))
+        self.loading = True
+        self.loadPoint = 0
+        self.maxLoad = 10
+        self.currLoad = ""
 
+        t = threading.Thread(target=self.load)
+        t.daemon = True
+        t.start()
+
+
+
+
+
+    def load(self):
+
+        self.currLoad = "Initializing"
         self.losScreen = pygame.Surface(self.res)
         self.losScreen.set_colorkey((255,255,255))
+
+        self.gunFont = pygame.font.Font("texture/terminal.ttf", int(60*self.RENDER_SCALE))
+        self.infoFont = pygame.font.Font("texture/terminal.ttf", int(30*self.RENDER_SCALE))
+
+        self.font40 = pygame.font.Font("texture/terminal.ttf", int(40*self.RENDER_SCALE))
+        self.timerFont = pygame.Font("texture/d7.ttf", int(70*self.RENDER_SCALE))
         
         self.entityTypes = ["misc", "players", "bullets"]
         self.entities = {x: [] for x in self.entityTypes}
@@ -72,17 +94,15 @@ class App:
         self.pillTextures = []
         for x in range(4):
             s = pygame.image.load(f"texture/pills/pill{x+1}.png").convert_alpha()
-            s = pygame.transform.scale_by(s, 20 / s.get_width())
+            s = self.scaleTexture(s, desiredWidth=20)
             self.pillTextures.append(s)
 
         
 
         self.pillHUD = pygame.image.load("texture/pills/pillHUD.png").convert_alpha()
-        self.pillHUD = pygame.transform.scale_by(self.pillHUD, 50 / s.get_width())
+        self.pillHUD = self.scaleTexture(self.pillHUD, desiredWidth=50)
 
-        self.font40 = pygame.font.Font("texture/terminal.ttf", 40)
-
-        self.timerFont = pygame.Font("texture/d7.ttf", 70)
+        
 
         self.introMusic = pygame.Sound("audio/music/intro.wav")
         self.HEAT = 0
@@ -103,8 +123,7 @@ class App:
 
         self.bulletSprite = pygame.image.load("texture/bullet.png").convert_alpha()
         self.bulletSprite = pygame.transform.scale(self.bulletSprite, [200, 5])
-        self.gunFont = pygame.font.Font("texture/terminal.ttf", 60)
-        self.infoFont = pygame.font.Font("texture/terminal.ttf", 30)
+        
         self.glitch = 0
         self.AUDIOVOLUME = 0.5
         self.TOTAL_TIME_ADJUSTMENT = 1.0
@@ -112,8 +131,8 @@ class App:
         
         self.PARTICLESYSTEM = ParticleSystem(self)
         self.camPD = v2(0,0)
+        self.camPD_f = v2(0,0)
         self.cacheLock = threading.Lock()
-        self.RENDER_SCALE = 1.0
         self.player = Player(self, v2(0,0), "texture/crack.png", True, True)
         self.bouncerTemp = Player(self, v2(0,0), "texture/bouncer.png", aiType="pistol")
 
@@ -177,15 +196,17 @@ class App:
                 "I'm glad one of us knows what just happened."
             ]
         
-
+        self.currLoad = "Loading walls"
         self.loadWalls()
 
-        self.los_walls = build_and_cache("level.json", "wall_cache.json", True)
+        self.los_walls = build_and_cache("level.json", "wall_cache.json", True, self.RENDER_SCALE)
 
         self.DOLIGHTS = True
 
         if self.DOLIGHTS:
             self.generateLights("level.json")
+
+        self.currLoad = "Lights done"
 
         tHid = self.gunFont.render("HIDDEN", True, [255,255,255])
         tSpot = self.gunFont.render("SPOTTED", True, [0,0,0])
@@ -201,28 +222,75 @@ class App:
 
         self.nav = NavGraph.load("level.json", self.los_walls)
 
+        self.currLoad = "Initting audio engine"
         self.AUDIOMIXER = AudioMixer(self, chunk_size=1024)
         self.AUDIOMIXER.start_stream()
+
+        self.warmupSound = self.playPositionalAudio("audio/waddle1.wav", v2(0,0), volume=0.1)
+        while self.warmupSound.active:
+            time.sleep(0.25)
 
         self.loop = self.playPositionalAudio("audio/klbutekno.wav", v2(0,0), loop = True, volume=1.0)
         self.loop.pitch = 1
 
+        self.loading = False
+
         #self.dialog = ["Moi", "Moikka, mikä sun nimi on?", "Ei se sulle kuulu", ]
 
 
+    def scaleTexture(self, image, desiredHeight = None, desiredWidth = None):
+        return pygame.transform.scale_by(image, desiredHeight*self.RENDER_SCALE / image.get_height() if desiredHeight else desiredWidth*self.RENDER_SCALE / image.get_width())
+
+    def renderLights(self):
+        self.light_frame_time += self.dt
+        self.light_frame_time %= 1
+
+        lightframe = int(self.light_frame_time * (len(self.light_frames) - 1))
+
+        screen_rect = self.screen.get_rect()
+        # camPD is in world space; convert to render space for the offset
+        cam_render = self.camPD * self.RENDER_SCALE - self.res / 2
+
+        for surf, r in self.light_static:
+            screen_pos = v2(r.topleft) - cam_render
+            screen_pos = (int(screen_pos.x), int(screen_pos.y))
+            if not screen_rect.colliderect((screen_pos, surf.get_size())):
+                continue
+            self.screen.blit(surf, screen_pos, special_flags=pygame.BLEND_RGB_MULT)
+
+        for surf, r in self.light_frames[lightframe]:
+            screen_pos = v2(r.topleft) - cam_render
+            screen_pos = (int(screen_pos.x), int(screen_pos.y))
+            if not screen_rect.colliderect((screen_pos, surf.get_size())):
+                continue
+            self.screen.blit(surf, screen_pos, special_flags=pygame.BLEND_RGB_MULT)
+
     def generateLights(self, level_file):
+        print("Generating lights.")
+        
+        t = time.time()
         level = Level.load()
+
+        self.currLoad = "Generating lights"
+        
+        self.loadPoint = 0
+
+        self.maxLoad = len(level.lights) + len(self.floorRects)
 
         self.mapCorner = v2(
             min(w.rect.left for w in self.walls),
             min(w.rect.top  for w in self.walls)
         )
 
-        for LIGHT in level.lights:
-            r = int(LIGHT.radius)
-            LIGHT.los_surf = pygame.Surface((r*2, r*2))
+        for i, LIGHT in enumerate(level.lights):
+            self.loadPoint += 1
+            print(f"Light {i}: Making wall mask")
+            r = int(LIGHT.radius * self.RENDER_SCALE)
+            LIGHT.los_surf = pygame.Surface((r * 2, r * 2))
             LIGHT.los_surf.fill((0, 0, 0))
-            los_draw(LIGHT.los_surf, LIGHT.pos, LIGHT.pos - (r, r), self.los_walls, debug=False)
+            # Camera = render-space top-left of this light's bounding box
+            light_cam = LIGHT.pos * self.RENDER_SCALE - v2(r, r)
+            los_draw(LIGHT.los_surf, LIGHT.pos * self.RENDER_SCALE, light_cam, self.los_walls, debug=False)
             LIGHT.is_static = isinstance(LIGHT, StaticLight)
 
         def light_touches_rect(light, r):
@@ -241,10 +309,23 @@ class App:
             rect_surf = pygame.Surface((r.width, r.height)).convert()
             rect_surf.fill((40, 40, 40))
             for LIGHT in rect_lights[i]:
-                radius = int(LIGHT.radius)
-                scaled = pygame.transform.smoothscale(LIGHT.frames[x], (radius*2, radius*2))
-                scaled.blit(LIGHT.los_surf, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
-                blit_pos = LIGHT.pos - v2(radius) - v2(r.topleft)
+                radius = int(LIGHT.radius * self.RENDER_SCALE)
+
+                if not LIGHT.scaled_frames[x]:
+
+                    QUALITY = 5
+                    smR = int(radius * 2 / QUALITY)
+
+                    scaled = pygame.transform.smoothscale(LIGHT.frames[x], (smR, smR))
+                    if QUALITY > 1:
+                        scaled = pygame.transform.scale(scaled, (radius * 2, radius * 2))
+                    # Apply the LOS mask: black out areas the light can't reach
+                    scaled.blit(LIGHT.los_surf, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
+                    LIGHT.scaled_frames[x] = scaled
+                else:
+                    scaled = LIGHT.scaled_frames[x]
+
+                blit_pos = LIGHT.pos * self.RENDER_SCALE - v2(radius) - v2(r.topleft)
                 rect_surf.blit(scaled, blit_pos, special_flags=pygame.BLEND_RGB_ADD)
             return rect_surf
 
@@ -254,13 +335,25 @@ class App:
         self.light_frames = [[] for _ in range(NUM_FRAMES)]
 
         for i, r in enumerate(self.floorRects):
+            self.loadPoint += 1
+            print(f"Rect: {i}/{len(self.floorRects)}")
+
+            rectConverted = r.copy()
+            rectConverted.x = int(r.x * self.RENDER_SCALE)
+            rectConverted.y = int(r.y * self.RENDER_SCALE)
+            rectConverted.width = int(r.width * self.RENDER_SCALE)
+            rectConverted.height = int(r.height * self.RENDER_SCALE)
+           
+
             if not rect_dynamic[i]:
-                self.light_static.append((bake_rect(i, r, 0), r))
+                self.light_static.append((bake_rect(i, rectConverted, 0), rectConverted))
             else:
                 for x in range(NUM_FRAMES):
-                    self.light_frames[x].append((bake_rect(i, r, x), r))
+                    self.light_frames[x].append((bake_rect(i, rectConverted, x), rectConverted))
 
         self.light_frame_time = 0
+        print(f"Lights drawn. Elapsed time: {time.time() - t:.1f}s")
+        
 
 
     def incrementSight(self):
@@ -289,9 +382,12 @@ class App:
 
         fr = solve(l)
 
+        TILESIZE = 100
+
         self.floorRects = []
         for x,y,w,h in fr:
-            self.floorRects.append(pygame.Rect(v2(x,y) * 100, v2(w,h) * 100))
+            r = pygame.Rect(v2(x,y) * TILESIZE, v2(w,h) * TILESIZE)
+            self.floorRects.append(r)
 
             
         self.walls = []
@@ -403,40 +499,40 @@ class App:
 
             WEAPON = self.player.weapon
 
-            p = v2(20, 20)
+            p = v2(20, 20) * self.RENDER_SCALE
             self.screen.blit(WEAPON.hudImage if not self.player.holster else WEAPON.hudImageH, p)
             text = self.gunFont.render(WEAPON.name, True, (255,255,255))
             self.screen.blit(text, p)
 
             if self.player.holster:
                 text = self.infoFont.render("HOLSTERED", True, (255,255,255))
-                self.screen.blit(text, p + v2(0, 65))
+                self.screen.blit(text, p + v2(0, 65) * self.RENDER_SCALE)
 
             if WEAPON.reloadTimer > 0:
                 text = self.infoFont.render(f"RELOADING: {(WEAPON.reloadTime - WEAPON.reloadTimer)*100/WEAPON.reloadTime:.0f}%", True, (255,255,255))
-                self.screen.blit(text, p + v2(0, 100))
+                self.screen.blit(text, p + v2(0, 100) * self.RENDER_SCALE)
             else:
                 text = self.infoFont.render(f"MAG: {WEAPON.mag}/{WEAPON.magCap}", True, (255,255,255))
-                self.screen.blit(text, p + v2(0, 100))
+                self.screen.blit(text, p + v2(0, 100) * self.RENDER_SCALE)
 
             text = self.gunFont.render(self.player.weapon.name, True, (255,255,255))
 
-        self.screen.blit(self.pillHUD, p + v2(0, 140))
+        self.screen.blit(self.pillHUD, p + v2(0, 140) * self.RENDER_SCALE)
         text = self.font40.render(f":{self.pillAmount}", True, (255,255,255))
-        self.screen.blit(text, p + v2(self.pillHUD.get_width(), 140))
+        self.screen.blit(text, p + v2(self.pillHUD.get_width(), 140 * self.RENDER_SCALE))
         
 
         health = self.player.health
         bars = int(health // 10)
         if bars > 0:
             for x in range(bars):
-                r = pygame.Rect(20 + x * 40, self.res.y - 60, 36, 40)
+                r = pygame.Rect((20 + x * 40) * self.RENDER_SCALE, self.res.y - 60 * self.RENDER_SCALE, 36 * self.RENDER_SCALE, 40 * self.RENDER_SCALE)
                 pygame.draw.rect(self.screen, [255,255,255], r)
 
-        pygame.draw.rect(self.screen, [255,255,255], (16, self.res.y - 64, 404, 48), width = 2)
+        pygame.draw.rect(self.screen, [255,255,255], (16 * self.RENDER_SCALE, self.res.y - 64 * self.RENDER_SCALE, 404 * self.RENDER_SCALE, 48 * self.RENDER_SCALE), width = 1)
         text = self.gunFont.render("HEALTH", True, (255,255,255))
 
-        self.screen.blit(text, (16, self.res.y - 66 - text.get_height()))
+        self.screen.blit(text, (16, self.res.y - 66 * self.RENDER_SCALE - text.get_height()))
 
             
 
@@ -548,49 +644,84 @@ class App:
     def smoothe(self, value, target, k):
         alpha = 1.0 - math.exp(-k * self.dt)
         return value * (1 - alpha) + target * alpha
+        
+    def convertPos(self, pos, heightDiff=1.0, skipRenderScale = False):
+        screen_center = self.res * 0.5
+        if skipRenderScale:
+            return (pos - self.camPD) * heightDiff + screen_center
+        return (pos - self.camPD) * self.RENDER_SCALE * heightDiff + screen_center
     
-    def convertPos(self, pos):
-        return pos - self.camPD
+    def inverseConvertPos(self, screen_pos, heightDiff=1.0):
+        return (screen_pos - self.res * 0.5) / (self.RENDER_SCALE * heightDiff) + self.camPD
     
     def initiateFade(self):
         self.fadePhase = 0
         self.fadeTimer = 0
 
+    def loadRender(self):
+        if hasattr(self, "gunFont"):
+            t = self.gunFont.render("LOADING", True, [255,255,255])
+            self.screen.blit(t, self.res/2 - v2(t.get_size())/2)
+
+        if hasattr(self, "infoFont"):
+            t = self.infoFont.render(self.currLoad, True, [255,255,255])
+            self.screen.blit(t, self.res/2 - v2(t.get_size())/2 + [0, 65])
+
+        loadRect = pygame.Rect(self.res.x/2 - 100, self.res.y/2 + 100, 200, 8)
+        bar = loadRect.copy()
+        bar.inflate_ip(4,4)
+        pygame.draw.rect(self.screen, [255,255,255], bar, width=1)
+
+        loadRect.width = 200 * self.loadPoint / self.maxLoad
+
+        pygame.draw.rect(self.screen, [255,255,255], loadRect)
+
+        pygame.display.flip()
+        self.dt = self.clock.tick(30) / 1000.0
+
+
     def run(self):
         while True:
             self.debugI = 0
             keypress.key_press_manager(self)
+            #mouseoffset = (self.mouse_pos - self.res/2)*0.35
+            
+        
+            self.screen.fill((0,0,0))
+            
 
+            if self.loading:
+                self.loadRender()
+                continue
 
-            mouseoffset = (self.mouse_pos - self.res/2)*0.35
-            self.cameraPos = self.player.pos - self.res/2
+            self.los_surf.fill((0,0,0))
+
+            self.cameraPos = self.player.pos.copy()
             if self.interactingWith:
                 self.cameraPos = (self.player.pos + self.interactingWith.pos)/2 - self.res/2
                 self.cameraPos.y += self.res.y * 0.35
             #if self.player.ableToFire:
+            mouseoffset = (self.mouse_pos - self.res * 0.5) / self.RENDER_SCALE * 0.35
             self.cameraPos += mouseoffset
             k = 5.0  # tune this (e.g. 5–20)
             alpha = 1.0 - math.exp(-k * self.dt)
 
-            self.camPD = self.camPD * (1 - alpha) + self.cameraPos * alpha
+            self.camPD_f = self.camPD_f * (1 - alpha) + self.cameraPos * alpha
+            self.camPD = v2(int(self.camPD_f.x), int(self.camPD_f.y))
             
             #self.handleMusic()
 
-            self.spawnEnemies()
-        
-            self.screen.fill((0,0,0))
-            self.los_surf.fill((0,0,0))
+            #self.spawnEnemies()
 
-
-
-            for x in self.walls:
-                x.render()
+            
 
             for r2 in self.floorRects:
 
                 r = r2.copy()
 
-                r.topleft = r2.topleft - self.camPD
+                r.topleft = self.convertPos(r2.topleft)
+                r.size = v2(r2.size) * self.RENDER_SCALE
+
                 pygame.draw.rect(self.screen, (50,50,50), r)
                 pygame.draw.rect(self.los_surf, (20,20,20), r)
 
@@ -632,30 +763,17 @@ class App:
                 x.tick()
                 x.render(self.screen)
 
-            poly = los_draw(self.los_surf, self.player.pos, self.camPD, self.los_walls, debug = False)
+            poly = los_draw(
+                self.los_surf,     # shape: self.res
+                self.player.pos * self.RENDER_SCALE,   # world space
+                self.camPD * self.RENDER_SCALE - self.res/2,        # world camera
+                self.los_walls,    # Converted to render scale
+                debug=False
+            )
 
             if self.DOLIGHTS:
-
-                self.light_frame_time += self.dt
-                self.light_frame_time %= 1
-
-                lightframe = int(self.light_frame_time * (len(self.light_frames) - 1))
-
-                screen_rect = self.screen.get_rect()
-
-                for surf, r in self.light_static:
-                    screen_pos = r.topleft - self.camPD
-                    if not screen_rect.colliderect((screen_pos, surf.get_size())):
-                        continue
-                    self.screen.blit(surf, screen_pos, special_flags=pygame.BLEND_RGB_MULT)
-
-                for surf, r in self.light_frames[lightframe]:
-                    screen_pos = r.topleft - self.camPD
-                    if not screen_rect.colliderect((screen_pos, surf.get_size())):
-                        continue
-                    self.screen.blit(surf, screen_pos, special_flags=pygame.BLEND_RGB_MULT)
-
-
+                self.renderLights()
+            
             lostime = 1000 * (time.perf_counter() - t)
             #self.screen.blit(los, (0,0))
 
@@ -668,6 +786,10 @@ class App:
             
 
             self.screen.blit(self.los_surf, (0, 0))
+
+
+            for x in self.walls:
+                x.render()
 
             
 
@@ -730,7 +852,7 @@ class App:
                 self.player.weapon.hudTick()
 
 
-            if pygame.mouse.get_visible() == self.player.ableToFire:
+            if pygame.mouse.get_visible() == self.player.ableToFire and False:
                 pygame.mouse.set_visible(not self.player.ableToFire)
 
             self.debugText(f"AUDIO: {len(self.AUDIOMIXER.audio_sources)}")
@@ -745,11 +867,14 @@ class App:
 
             self.drawTimer()
 
+            #pygame.draw.circle(self.screen, (255,0,0), self.inverseConvertPos(v2(0,0)), 4)
+            #pygame.draw.circle(self.screen, (0,255,0), self.convertPos(self.player.pos), 10)
+            self.debugText(self.inverseConvertPos(v2(0,0)))
 
             self.debugText(f"FPS: {self.fps:.0f}")
             self.debugText(f"TIME ON LOS: {lostime:.1f}ms")
-            if self.DOLIGHTS:
-                self.debugText(f"LIGHTFRAME: {lightframe}")
+            #if self.DOLIGHTS:
+            #    self.debugText(f"LIGHTFRAME: {lightframe}")
             pygame.display.flip()
             self.dt = self.clock.tick(180) / 1000.0
             self.dt = min(0.1, self.dt)

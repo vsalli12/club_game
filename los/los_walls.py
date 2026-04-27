@@ -171,9 +171,9 @@ def _merge_v_edges(v_edges):
     return segments
 
 
-def _to_pixels(segments):
+def _to_pixels(segments, render_scale):
     """Convert tile-coord segments to pixel coords."""
-    return [(x1*TILESIZE, y1*TILESIZE, x2*TILESIZE, y2*TILESIZE)
+    return [(x1*TILESIZE*render_scale, y1*TILESIZE*render_scale, x2*TILESIZE*render_scale, y2*TILESIZE*render_scale)
             for x1, y1, x2, y2 in segments]
 
 
@@ -181,7 +181,7 @@ def _to_pixels(segments):
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_los_walls(walls_tile):
+def build_los_walls(walls_tile, render_scale):
     """
     walls_tile : list of [tx, ty, tw, th]  (tile coords, as stored in walls.json)
     Returns np.ndarray shape (N,4) int32 in pixel coords: [x1,y1,x2,y2]
@@ -194,12 +194,12 @@ def build_los_walls(walls_tile):
 
     h_edges, v_edges = _contour_segments(int_rects_abs)
     segs = _merge_h_edges(h_edges) + _merge_v_edges(v_edges)
-    px   = _to_pixels(segs)
+    px   = _to_pixels(segs, render_scale)
 
     return np.array(px, dtype=np.int32)
 
 
-def build_and_cache(level_file=WALLS_FILE, cache_file=CACHE_FILE, force_rebuild=False):
+def build_and_cache(level_file=WALLS_FILE, cache_file=CACHE_FILE, force_rebuild=False, render_scale = 1.0):
     """
     Load walls.json, compute LOS wall segments, cache to los_walls.json.
     On subsequent calls loads from cache unless force_rebuild=True.
@@ -214,7 +214,7 @@ def build_and_cache(level_file=WALLS_FILE, cache_file=CACHE_FILE, force_rebuild=
     with open(level_file) as f:
         walls_tile = json.load(f)["walls"]
 
-    arr = build_los_walls(walls_tile)
+    arr = build_los_walls(walls_tile, render_scale)
 
     with open(cache_file, "w") as f:
         json.dump(arr.tolist(), f)

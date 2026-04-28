@@ -49,6 +49,7 @@ class ParentActor:
         self.shooting = False
         self.breatheTimer = 0
         self.weapon = None
+        self.touchingWall = 0
 
 
     def mandatoryTick(self):
@@ -75,6 +76,9 @@ class ParentActor:
 
         if moved:
             self.pos = v2(self.hitBox.center)
+            self.touchingWall += self.app.dt
+        else:
+            self.touchingWall = 0
 
         if self.vel.length() > self.walking:
             self.walking += self.app.dt * 4

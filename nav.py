@@ -122,7 +122,7 @@ def can_see(ax, ay, bx, by, los_walls):
 # ---------------------------------------------------------------------------
 
 class NavGraph:
-    def __init__(self, nodes_tile, coords_world, edges, dist, next_hop, los_walls, render_scale = 1.0):
+    def __init__(self, nodes_tile, coords_world, edges, dist, next_hop, los_walls, app = None, render_scale = 1.0):
         """
         nodes_tile  : list of [tx, ty] tile coords (may be 0.5 increments)
         coords_world: np.ndarray (n,2) float64 world pixels
@@ -138,15 +138,20 @@ class NavGraph:
         self.next_hop     = next_hop
         self.walls        = los_walls
         self.render_scale = render_scale
+        self.app = app
 
     # --- public query -------------------------------------------------------
 
     def can_see(self, start: v2, end: v2) -> bool:
         rs = self.render_scale
+        if self.app:
+            w = self.app.effective_los_walls
+        else:
+            w = self.walls
         return bool(_can_see_jit(
             float(start.x) * rs, float(start.y) * rs,
             float(end.x)   * rs, float(end.y)   * rs,
-            self.walls))
+            w))
 
     def get_path(self, start: v2, end: v2) -> list:
         n = len(self.nodes_tile)
@@ -199,8 +204,10 @@ class NavGraph:
     # --- build --------------------------------------------------------------
 
     @staticmethod
-    def build(nodes_tile, los_walls, render_scale):
+    def build(app, nodes_tile):
         n = len(nodes_tile)
+        los_walls = app.los_walls
+        render_scale = app.RENDER_SCALE
         empty = NavGraph([], np.zeros((0, 2), dtype=np.float64), [],
                         np.zeros((0, 0)), np.zeros((0, 0), dtype=np.int32),
                         los_walls, render_scale)
@@ -231,13 +238,13 @@ class NavGraph:
         dist = direct.copy()
         _floyd_warshall(dist, next_hop)
 
-        return NavGraph(nodes_tile, coords_render, edges, dist, next_hop, los_walls, render_scale)
+        return NavGraph(nodes_tile, coords_render, edges, dist, next_hop, los_walls, app, render_scale)
 
     @staticmethod
-    def load(levelFile, los_walls, render_scale):
+    def load(app, levelFile):
         """Load nav_nodes.json and build the graph."""
         nodes_tile = []
         if os.path.exists(levelFile):
             with open(levelFile) as f:
                 nodes_tile = json.load(f)["nodes"]
-        return NavGraph.build(nodes_tile, los_walls, render_scale)
+        return NavGraph.build(app, nodes_tile)

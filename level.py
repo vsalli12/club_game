@@ -1,4 +1,4 @@
-from light import Light
+from dynamicBakedLight import Light
 import json, os
 
 from enum import Enum
@@ -10,6 +10,7 @@ class AreaType(Enum):
     TOILET     = "TOILET"
     HALLWAY    = "HALLWAY"
     FORBIDDEN  = "FORBIDDEN"
+    ENEMYSPAWN = "ENEMYSPAWN"
 
 AREA_COLORS = {
     AreaType.OUTSIDE:    (100, 180, 100),
@@ -18,6 +19,7 @@ AREA_COLORS = {
     AreaType.TOILET:     ( 80, 200, 220),
     AreaType.HALLWAY:    (200, 200, 200),
     AreaType.FORBIDDEN:  (220,  40,  40),
+    AreaType.ENEMYSPAWN:  (40, 255, 40),
 }
 
 AREA_TYPES = list(AreaType)  # auto-populated — add to enum, it appears in cycle

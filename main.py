@@ -26,8 +26,10 @@ from objects.pill import Pill
 from enemies.enemy import Enemy
 from level import Level, AreaType
 from nav import NavGraph
-from light import StaticLight, make_muzzle_flash_frames
+from dynamicBakedLight import StaticLight, make_muzzle_flash_frames
 from scorepopup import ScorePopup
+from slidingDoor import SlidingDoor
+import traceback
 def blit_glitch(screen, image, pos, glitch = 2, diagonal = False, black_bar_chance = 15, black_bar_color = (0,0,0)):
     upper_pos = 0
     lower_pos = random.randint(2, 5)
@@ -64,12 +66,19 @@ class App:
         self.loadPoint = 0
         self.maxLoad = 10
         self.currLoad = ""
+        self.crashed = False
 
-        t = threading.Thread(target=self.load)
+        t = threading.Thread(target=self.loadWrapped)
         t.daemon = True
         t.start()
 
 
+    def loadWrapped(self):
+        try:
+            self.load()
+        except:
+            self.crashed = True
+            traceback.print_exc()
 
 
 
@@ -123,6 +132,9 @@ class App:
         tileTexture3 = pygame.image.load("texture/tile3.jpg").convert()
         self.tileTexture3 = self.scaleTextureSmooth(tileTexture3, desiredHeight=100)
 
+        tileTexture4 = pygame.image.load("texture/tile4.jpg").convert()
+        self.tileTexture4 = self.scaleTextureSmooth(tileTexture4, desiredHeight=100)
+
         self.enemiesSpottedPlayer = False
         self.sightToPlayer = False
         self.enemiesSeePlayer = 0
@@ -138,7 +150,8 @@ class App:
         self.AUDIOVOLUME = 0.5
         self.TOTAL_TIME_ADJUSTMENT = 1.0
 
-        
+        self.interactables = []
+
         self.PARTICLESYSTEM = ParticleSystem(self)
         self.camPD = v2(0,0)
         self.camPD_f = v2(0,0)
@@ -150,7 +163,7 @@ class App:
 
         self.WEAPON_USPS = Weapon(self, None, texture = "texture/pistol.png", name = "USP-S", 
                                   sizeMult=0.5, holdoutPos = -2.0, shotSound="audio/silenced2.wav", 
-                                  rps = 10, magCap = 12, damage = 5)
+                                  rps = 10, magCap = 12, damage = 25)
 
         self.lastSec = -1
         self.addEntity(self.player)
@@ -169,6 +182,7 @@ class App:
         self.maxFade = 0.25
         self.fadePhase = 2
         self.pillAmount = 0
+        self.playerInRestricted = False
 
         self.SCORE_POPUP = ScorePopup(self)
         self.totalScore = 0
@@ -183,6 +197,9 @@ class App:
         #self.loop.cutoff = None
         self.prevSpotted = False
         self.stateAnim = 0
+
+        self.prevArea = False
+        self.areaAnim = 0
 
         self.level = Level.load()
 
@@ -217,13 +234,17 @@ class App:
         self.loadWalls()
 
         self.los_walls = build_and_cache("level.json", "wall_cache.json", True, self.RENDER_SCALE)
+        print(self.los_walls)
 
         self.DOLIGHTS = True
 
         if self.DOLIGHTS:
             self.currLoad = "Making muzzle flashes"
-            self.MUZZLE_FLASH_FRAMES = make_muzzle_flash_frames()
+            self.MUZZLE_FLASH_FRAMES = []
+            for i in range(20):
+                self.MUZZLE_FLASH_FRAMES.append(make_muzzle_flash_frames())
             self.generateLights("level.json")
+            
         self.muzzleFlashes = []
         self.currLoad = "Lights done"
 
@@ -240,7 +261,7 @@ class App:
         self.los_surf.set_colorkey((255, 255, 255))
 
         self.currLoad = "Loading navgraph"
-        self.nav = NavGraph.load("level.json", self.los_walls, self.RENDER_SCALE)
+        self.nav = NavGraph.load(self, "level.json")
 
         self.currLoad = "Initting audio engine"
         self.AUDIOMIXER = AudioMixer(self, chunk_size=1024)
@@ -253,6 +274,15 @@ class App:
         self.loop = self.playPositionalAudio("audio/klbutekno.wav", v2(0,0), loop = True, volume=1.0)
         self.loop.pitch = 1
 
+        self.enemySpawnTimer = 0
+        self.enemySpawnsEach = 5
+
+        SlidingDoor(self, (7.0, 17.0), [0.25,2], "w")
+        SlidingDoor(self, (11.0, -2.0), [0.25,2], "w")
+        SlidingDoor(self, (-1.5, -9.0), [0.25,2], "w")
+        SlidingDoor(self, (-11.0, 5.0), [2,0.25], "h")
+        SlidingDoor(self, (8.5, 7.0), [0.25,2], "w")
+
         self.loading = False
 
         #self.dialog = ["Moi", "Moikka, mikä sun nimi on?", "Ei se sulle kuulu", ]
@@ -263,6 +293,16 @@ class App:
     
     def scaleTextureSmooth(self, image, desiredHeight = None, desiredWidth = None):
         return pygame.transform.smoothscale_by(image, desiredHeight*self.RENDER_SCALE / image.get_height() if desiredHeight else desiredWidth*self.RENDER_SCALE / image.get_width())
+        
+    @property
+    def effective_los_walls(self):
+        doors = [w.los_segment for w in self.walls if isinstance(w, SlidingDoor)]
+        if not doors:
+            return self.los_walls
+        dynamic = np.concatenate([d for d in doors if d.shape[0] > 0], axis=0) if any(d.shape[0] > 0 for d in doors) else np.zeros((0, 4), dtype=np.float64)
+        if dynamic.shape[0] == 0:
+            return self.los_walls
+        return np.concatenate([self.los_walls, dynamic], axis=0)
 
     def renderLights(self):
         self.light_frame_time += self.dt
@@ -292,6 +332,14 @@ class App:
             MF.renderTo(self.screen)
             MF.tick()
 
+        self.debugText(f"LIGHTFRAME: {lightframe}")
+
+    def getPatrolPoint(self):
+        areas = [x[0] for x in self.mapAreas if x[1] == AreaType.FORBIDDEN]
+        randomArea = random.choice(areas)
+        position = v2(random.randint(randomArea.left + 45, randomArea.right - 45), random.randint(randomArea.top + 45, randomArea.bottom - 45))
+        return position
+
     def generateLights(self, level_file):
         print("Generating lights.")
         
@@ -311,7 +359,7 @@ class App:
 
         for i, LIGHT in enumerate(self.level.lights):
             self.loadPoint += 1
-            print(f"Light {i}: Making wall mask")
+            self.currLoad = f"Light {i}: Making wall mask"
             r = int(LIGHT.radius * self.RENDER_SCALE)
             LIGHT.los_surf = pygame.Surface((r * 2, r * 2))
             LIGHT.los_surf.fill((0, 0, 0))
@@ -354,16 +402,18 @@ class App:
 
                 blit_pos = LIGHT.pos * self.RENDER_SCALE - v2(radius) - v2(r.topleft)
                 rect_surf.blit(scaled, blit_pos, special_flags=pygame.BLEND_RGB_ADD)
+                
             return rect_surf
 
-        NUM_FRAMES = len(self.level.lights[0].frames) if self.level.lights else 1
+        NUM_FRAMES = max([len(x.frames) for x in self.level.lights])
+        print("FRAMES:", NUM_FRAMES)
 
         self.light_static = []
         self.light_frames = [[] for _ in range(NUM_FRAMES)]
 
         for i, r in enumerate(self.floorRects):
             self.loadPoint += 1
-            print(f"Rect: {i}/{len(self.floorRects)}")
+            self.currLoad = f"Lighting floor: {i}/{len(self.floorRects)}"
 
             rectConverted = r.copy()
             rectConverted.x = int(r.x * self.RENDER_SCALE)
@@ -380,6 +430,7 @@ class App:
 
         self.light_frame_time = 0
         print(f"Lights drawn. Elapsed time: {time.time() - t:.1f}s")
+        del self.level.lights
         
     def checkPositionArea(self, pos):
         for rect, a_t in self.mapAreas:
@@ -456,6 +507,8 @@ class App:
                     texture = self.tileTexture
                 elif t == AreaType.OUTSIDE:
                     texture = self.tileTexture3
+                elif t == AreaType.FORBIDDEN:
+                    texture = self.tileTexture4
                 else:
                     texture = self.tileTexture2
 
@@ -501,9 +554,15 @@ class App:
 
         if len(self.entities["players"]) > 8:
             return
+        
+        self.enemySpawnTimer += self.dt
+        if self.enemySpawnTimer < self.enemySpawnsEach:
+            return
+        self.enemySpawnTimer = 0
 
         a = random.uniform(0, math.pi*2)
-        pos = v2(random.choice(self.floorRects).center)
+        areas = [x[0] for x in self.mapAreas if x[1] == AreaType.ENEMYSPAWN]
+        pos = v2(random.choice(areas).center)
 
         if self.nav.can_see(pos, self.player.pos):
             return
@@ -643,9 +702,17 @@ class App:
             self.stateAnim = 0.0
             self.prevSpotted = state
 
+        areaDenied = self.playerInRestricted
+
+        if areaDenied != self.prevArea:
+            self.areaAnim = 0.0
+            self.prevArea = areaDenied
+
         # --- advance animation ---
         speed = 6.0  # 1/s → ~0.17s
         self.stateAnim = min(1.0, self.stateAnim + speed * self.dt)
+
+        self.areaAnim = min(1.0, self.areaAnim + speed * self.dt)
 
         # ease-out (critical for not looking cheap)
         t = 1 - (1 - self.stateAnim)**3
@@ -670,6 +737,18 @@ class App:
         rect = surf.get_rect(center=center)
 
         self.screen.blit(surf, rect.topleft)
+
+        if areaDenied:
+            baseA = self.infoFont.render("RESTRICTED AREA", True, (255, 80, 80)).convert_alpha()
+            tA = 1 - (1 - self.areaAnim)**3
+            scaleA = 1.0 + 0.25 * (1 - tA)
+            w = int(baseA.get_width() * scaleA)
+            h = int(baseA.get_height() * scaleA)
+            surfA = pygame.transform.smoothscale(baseA, (w, h))
+            surfA.set_alpha(int(255 * tA))
+            centerA = (center[0], center[1] + surf.get_height() + 5)
+            rectA = surfA.get_rect(center=centerA)
+            self.screen.blit(surfA, rectA.topleft)
 
         # --- centered progress bar ---
         bar_w = max(base.get_width(), 120)
@@ -757,12 +836,11 @@ class App:
 
 
     def run(self):
-        while True:
+        while not self.crashed:
             self.debugI = 0
             keypress.key_press_manager(self)
             #mouseoffset = (self.mouse_pos - self.res/2)*0.35
             
-        
             self.screen.fill((0,0,0))
             
 
@@ -817,6 +895,8 @@ class App:
 
             self.player.tick()
 
+            self.playerInRestricted = self.checkPositionArea(self.player.pos) == AreaType.FORBIDDEN
+
             if self.sightToPlayer:
                 self.incrementSight()
             else:
@@ -851,7 +931,7 @@ class App:
                 self.los_surf,     # shape: self.res
                 self.player.pos * self.RENDER_SCALE,   # world space
                 self.camPD * self.RENDER_SCALE - self.res/2,        # world camera
-                self.los_walls,    # Converted to render scale
+                self.effective_los_walls,    # Converted to render scale
                 debug=False
             )
 
@@ -865,15 +945,17 @@ class App:
 
             
 
-            
+            for w in self.walls:
+                if isinstance(w, SlidingDoor):
+                    w.tick()
+                w.render()
 
             
 
             self.screen.blit(self.los_surf, (0, 0))
 
 
-            for x in self.walls:
-                x.render()
+            
 
             if False: # DEBUG PATH
                 debugPath = self.nav.get_path(self.player.pos, v2(0,0))
@@ -900,29 +982,21 @@ class App:
                     self.fadePhase += 1
 
 
-            if not self.interactingWith and False:
-                closest = self.player._playerDetectInteraction()
-                if closest:
-                    text = self.font.render(f"Press E to interact with {closest.name}", True, (255,255,255))
-                    pos = closest.pos - v2(0, 100) - v2(text.get_size()) / 2 - self.camPD
-                    self.screen.blit(text, pos)
+            
 
-                    if "e" in self.keypress:
-                        self.interactingWith = closest
-                        self.keypress.remove("e")
-                        self.dialog = Dialog(self, self.defDialog, self.player, closest)
 
-            if self.interactingWith:
-                if self.player.pos.distance_to(self.interactingWith.pos) > 300 or "esc" in self.keypress:
-                    self.interactingWith = None
-                    if self.dialog:
-                        self.dialog.fadingOut = True
+            if False:
+                if self.interactingWith:
+                    if self.player.pos.distance_to(self.interactingWith.pos) > 300 or "esc" in self.keypress:
+                        self.interactingWith = None
+                        if self.dialog:
+                            self.dialog.fadingOut = True
 
-            if self.dialog:
-                self.dialog.tick()
-                if not self.dialog.alive:
-                    self.dialog = None
-                    self.interactingWith = None 
+                if self.dialog:
+                    self.dialog.tick()
+                    if not self.dialog.alive:
+                        self.dialog = None
+                        self.interactingWith = None 
 
 
             if self.player.ableToFire:
@@ -939,7 +1013,18 @@ class App:
             self.debugText(f"ENT: {ent}")
             self.debugText(f"SIGHT: {self.enemiesSeePlayer:.1f}")
 
-            self.drawHud()
+            if not self.interactingWith:
+                closest = self.player._playerDetectInteraction()
+                if closest:
+                    text = self.font.render(f"Press E to interact with {closest.name}", True, (255,255,255))
+                    pos = self.convertPos(closest.pos) - v2(0, 100) * self.RENDER_SCALE - v2(text.get_size())/2
+                    self.screen.blit(text, pos)
+
+                    if "e" in self.keypress:
+                        if isinstance(closest, SlidingDoor):
+                            closest.interact()
+
+            self.drawHud()  
             self.drawHiddenHud()
 
             self.SCORE_POPUP.tick()
@@ -954,7 +1039,7 @@ class App:
             self.debugText(f"FPS: {self.fps:.0f}")
             self.debugText(f"TIME ON LOS: {lostime:.1f}ms")
             #if self.DOLIGHTS:
-            #    self.debugText(f"LIGHTFRAME: {lightframe}")
+            #    
             pygame.display.flip()
             self.dt = self.clock.tick(180) / 1000.0
             self.dt = min(0.1, self.dt)

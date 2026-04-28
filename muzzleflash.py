@@ -1,5 +1,6 @@
 import pygame
 from pygame import Vector2 as v2
+import random
 class MuzzleFlash:
     def __init__(self, app, weapon):
         self.app = app
@@ -7,6 +8,7 @@ class MuzzleFlash:
         self.lifetime = 0.0
         self.app.muzzleFlashes.append(self)
         self.maxLife = 0.15
+        self.frames = random.choice(self.app.MUZZLE_FLASH_FRAMES)
 
     def tick(self):
         self.lifetime += self.app.dt
@@ -18,8 +20,8 @@ class MuzzleFlash:
         pos = self.weapon.bulletSpawnPoint()
         angle_deg = -self.weapon.FINALROTATION
 
-        FRAME = int((self.lifetime / 0.25) * (len(self.app.MUZZLE_FLASH_FRAMES) - 1))
-        im, (ox, oy) = self.app.MUZZLE_FLASH_FRAMES[FRAME]
+        FRAME = int((self.lifetime / 0.25) * (len(self.frames) - 1))
+        im, (ox, oy) = self.frames[FRAME]
         r = int(300 * (1.0 - (self.lifetime / 0.25) * 0.7) * self.app.RENDER_SCALE)
         full_size = 128
         scale = (r * 2) / full_size

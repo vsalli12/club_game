@@ -54,7 +54,7 @@ class Player(ParentActor):
     def _playerDetectInteraction(self):
         closest = float("inf")
         closestEntity = None
-        for entity in self.app.entities["players"]:
+        for entity in self.app.interactables:
             if entity is not self and hasattr(entity, "pos") and (entity.pos - self.pos).length() < 200:
                 distance = (entity.pos - self.pos).length()
                 if distance < closest:
@@ -137,7 +137,7 @@ class Player(ParentActor):
     def tick(self):
 
         self.mandatoryTick()
-        
+
 
         if self.player and self.weapon and not self.weapon.isMeleeing():
             if "q" in self.app.keypress:

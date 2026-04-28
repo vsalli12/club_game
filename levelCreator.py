@@ -3,7 +3,7 @@ import os
 import numpy as np
 import pygame
 from pygame import Vector2 as v2
-from light import (Light, StaticLight, StrobeLight, PulseLight,
+from dynamicBakedLight import (Light, StaticLight, StrobeLight, PulseLight,
                     RotatingLight, ColorCycleLight)
 
 pygame.init()
@@ -11,7 +11,7 @@ from level import Level
 LEVEL_FILE = "level.json"
 CACHE_FILE = "wall_cache.json"
 
-RES = v2(1000, 1000)
+RES = v2(1920, 1080)
 screen = pygame.display.set_mode(RES)
 clock  = pygame.time.Clock()
 pygame.display.set_caption("Level Creator")
@@ -53,7 +53,7 @@ def screen_to_tile_int(sx, sy):
 
 
 from level import AreaType, AREA_COLORS, AREA_TYPES
-
+from los.los_walls import build_and_cache
 # ── area state (mirrors wall state) ──────────────────────────────────────────
 area_type_idx  = 0
 area_state     = "idle"
@@ -106,10 +106,7 @@ sel_node     = None
 node_move_off= None
 
 def load_cache():
-    if os.path.exists(CACHE_FILE):
-        with open(CACHE_FILE) as f:
-            return np.array(json.load(f), dtype=np.float64)
-    return np.zeros((0, 4), dtype=np.float64)
+    return build_and_cache("level.json", "wall_cache.json", True, 1.0)
 
 los_walls_np = load_cache()
 
@@ -308,6 +305,7 @@ def draw_light_preview():
 def draw_ui():
     cam_cx = (cam.x + RES.x/2*TILESIZE/TILE) / TILESIZE
     cam_cy = (cam.y + RES.y/2*TILESIZE/TILE) / TILESIZE
+    mworld_x, mworld_y = screen_to_world(*pygame.mouse.get_pos())
     mode_str = {"walls":"WALLS","nodes":"NODES","lights":"LIGHTS", "areas":"AREAS"}[editor_mode]
 
     if editor_mode == "walls":
@@ -324,7 +322,7 @@ def draw_ui():
         extra = f"Type: {LIGHT_TYPES[light_type_idx]}  Lights: {len(level.lights)}"
 
     lines = [
-        f"Cam: ({cam_cx:.1f},{cam_cy:.1f})  Zoom: {TILE:.0f}  [TAB] Mode: {mode_str}",
+        f"Mouse: ({mworld_x / TILESIZE:.1f},{mworld_y / TILESIZE:.1f})  Zoom: {TILE:.0f}  [TAB] Mode: {mode_str}",
         extra, hint,
     ]
     if editor_mode == "walls" and preview_rect:

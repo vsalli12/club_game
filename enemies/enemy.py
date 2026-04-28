@@ -76,7 +76,7 @@ class Enemy(ParentActor):
             self.running = False
             self.runOffset = 0
 
-        if self.LOS and d < 750 and (not self.app.player.holster or self.app.enemiesSpottedPlayer):
+        if self.LOS and d < 750 and ((not self.app.player.holster or self.app.playerInRestricted) or self.app.enemiesSpottedPlayer):
             self.app.sightToPlayer = True
 
         if self.shooting:
@@ -95,6 +95,16 @@ class Enemy(ParentActor):
             if diff.length() > 0:
                 self.vel = diff.normalize()
 
+            for x in self.app.interactables:
+  
+                if x.collides(self.hitBox):
+                    x.openFor(1.5)
+
+            if self.touchingWall > 0.25:
+                self.walkTo = None
+                self.route = None
+                self.touchingWall = 0
+
         if not self.route and not self.walkTo:
             if self.LOS and self.app.enemiesSpottedPlayer:
                 self.walkTo = self.app.player.pos.copy()
@@ -103,7 +113,7 @@ class Enemy(ParentActor):
                 if self.app.enemiesSpottedPlayer:
                     target = self.app.player.pos
                 else:
-                    target = random.choice(self.app.floorRects).center
+                    target = self.app.getPatrolPoint()
 
 
                 self.route = self.app.nav.get_path(self.pos, v2(target))

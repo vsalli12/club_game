@@ -2,6 +2,11 @@ import pygame
 from pygame import Vector2 as v2
 import numpy as np
 import random
+from multiPurposeHudElement import MPHE, CodeInputAnimation
+
+def randomCode():
+    return "".join([str(random.randint(0,9)) for _ in range(4)])
+
 class SlidingDoor:
     def __init__(self, app, tile, size, axis="h"):
         """
@@ -20,9 +25,8 @@ class SlidingDoor:
         self.forceClose = False
         self.pos = v2(self.rect.center)
         self.name = "Door"
-        self.doorcode = ""
-        for i in range(4):
-            self.doorcode += str(random.randint(0,9))
+        self.doorcode = randomCode()
+        print(self.doorcode)
 
         self.AIcollideRect = self.rect.copy()
         if axis == "h":
@@ -35,6 +39,7 @@ class SlidingDoor:
         self._build_segment()
         app.walls.append(self)
         app.interactables.append(self)
+
 
     def _build_segment(self):
         r = self.rect
@@ -84,6 +89,17 @@ class SlidingDoor:
         else:
             self.app.playPositionalAudio("audio/door_close.wav", self.pos)
         self.forceClose = False
+
+    def openNoHack(self):
+        print("Trying to open")
+        anim = CodeInputAnimation(randomCode(), on_complete=None, success=False)
+        MPHE(self.app, self, animation=anim)
+
+    def makeHudWidget(self):
+        MPHE(self.app, self, options = {
+            "1": ("Try to open", lambda: self.openNoHack()),
+            "2": ("Hack", lambda: self.interact()),
+        })
 
     def tick(self):
         target = 1.0 if self.open else 0.0

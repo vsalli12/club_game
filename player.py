@@ -55,7 +55,7 @@ class Player(ParentActor):
         closest = float("inf")
         closestEntity = None
         for entity in self.app.interactables:
-            if entity is not self and hasattr(entity, "pos") and (entity.pos - self.pos).length() < 200:
+            if entity is not self and hasattr(entity, "pos") and hasattr(entity, "makeHudWidget") and (entity.pos - self.pos).length() < 200:
                 distance = (entity.pos - self.pos).length()
                 if distance < closest:
                     closest = distance

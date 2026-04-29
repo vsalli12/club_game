@@ -211,8 +211,9 @@ def build_and_cache(level_file=WALLS_FILE, cache_file=CACHE_FILE, force_rebuild=
             data = json.load(f)
         return np.array(data, dtype=np.int32)
 
-    with open(level_file) as f:
-        walls_tile = json.load(f)["walls"]
+    if os.path.exists(level_file):
+        with open(level_file) as f:
+            walls_tile = json.load(f)["walls"]
 
     arr = build_los_walls(walls_tile, render_scale)
 

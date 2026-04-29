@@ -30,6 +30,7 @@ from dynamicBakedLight import StaticLight, make_muzzle_flash_frames
 from scorepopup import ScorePopup
 from slidingDoor import SlidingDoor
 import traceback
+
 def blit_glitch(screen, image, pos, glitch = 2, diagonal = False, black_bar_chance = 15, black_bar_color = (0,0,0)):
     upper_pos = 0
     lower_pos = random.randint(2, 5)
@@ -67,6 +68,9 @@ class App:
         self.maxLoad = 10
         self.currLoad = ""
         self.crashed = False
+        self.active_widget = None
+        self.DOLIGHTS = True
+
 
         t = threading.Thread(target=self.loadWrapped)
         t.daemon = True
@@ -96,7 +100,6 @@ class App:
         
         self.entityTypes = ["misc", "players", "bullets"]
         self.entities = {x: [] for x in self.entityTypes}
-        print(self.entities)
         self.particle_list = []
         self.trails = []
         self.debugI = 0
@@ -234,9 +237,6 @@ class App:
         self.loadWalls()
 
         self.los_walls = build_and_cache("level.json", "wall_cache.json", True, self.RENDER_SCALE)
-        print(self.los_walls)
-
-        self.DOLIGHTS = True
 
         if self.DOLIGHTS:
             self.currLoad = "Making muzzle flashes"
@@ -255,8 +255,6 @@ class App:
         self.hidspot_surf = pygame.Surface((x,y))
         self.hidspot_surf.set_colorkey((0,0,0))
 
-        print(self.los_walls.shape)
-
         self.los_surf = pygame.Surface(self.res)
         self.los_surf.set_colorkey((255, 255, 255))
 
@@ -271,7 +269,7 @@ class App:
         while self.warmupSound.active:
             time.sleep(0.25)
 
-        self.loop = self.playPositionalAudio("audio/klbutekno.wav", v2(0,0), loop = True, volume=1.0)
+        self.loop = self.playPositionalAudio("audio/klbutekno.wav", v2(0,0), loop = True, volume=0.5)
         self.loop.pitch = 1
 
         self.enemySpawnTimer = 0
@@ -704,15 +702,16 @@ class App:
 
         areaDenied = self.playerInRestricted
 
-        if areaDenied != self.prevArea:
-            self.areaAnim = 0.0
-            self.prevArea = areaDenied
+        
 
         # --- advance animation ---
         speed = 6.0  # 1/s → ~0.17s
         self.stateAnim = min(1.0, self.stateAnim + speed * self.dt)
 
-        self.areaAnim = min(1.0, self.areaAnim + speed * self.dt)
+        if areaDenied:
+            self.areaAnim = min(1.0, self.areaAnim + speed * self.dt)
+        else:
+            self.areaAnim = max(0.0, self.areaAnim - speed * self.dt)
 
         # ease-out (critical for not looking cheap)
         t = 1 - (1 - self.stateAnim)**3
@@ -738,7 +737,7 @@ class App:
 
         self.screen.blit(surf, rect.topleft)
 
-        if areaDenied:
+        if self.areaAnim > 0:
             baseA = self.infoFont.render("RESTRICTED AREA", True, (255, 80, 80)).convert_alpha()
             tA = 1 - (1 - self.areaAnim)**3
             scaleA = 1.0 + 0.25 * (1 - tA)
@@ -1013,16 +1012,17 @@ class App:
             self.debugText(f"ENT: {ent}")
             self.debugText(f"SIGHT: {self.enemiesSeePlayer:.1f}")
 
-            if not self.interactingWith:
+            if not self.active_widget:
                 closest = self.player._playerDetectInteraction()
                 if closest:
-                    text = self.font.render(f"Press E to interact with {closest.name}", True, (255,255,255))
-                    pos = self.convertPos(closest.pos) - v2(0, 100) * self.RENDER_SCALE - v2(text.get_size())/2
-                    self.screen.blit(text, pos)
+                    closest.makeHudWidget()
 
-                    if "e" in self.keypress:
-                        if isinstance(closest, SlidingDoor):
-                            closest.interact()
+
+            if self.active_widget:
+                self.active_widget.tick()
+            
+            if self.active_widget:
+                self.active_widget.render()
 
             self.drawHud()  
             self.drawHiddenHud()

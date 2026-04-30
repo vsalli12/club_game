@@ -54,6 +54,7 @@ class Weapon:
         self.meleeTime = 0.5
         self.meleeTimer = 0
         self.lockR = 0
+        self.aimAt = v2(0,0)
 
         self.FINALROTATION = 0
 
@@ -232,14 +233,14 @@ class Weapon:
 
         if not self.owner.holster:
 
-
             if self.isReloading():
                 r = 135 if not self.owner.facingRight else 45
 
             elif not self.owner.player:
                 if not self.owner.shooting:
-                    if self.app.enemiesSpottedPlayer and self.owner.LOS:
+                    if (self.app.enemiesSpottedPlayer or self.owner.ignoreSpottedStatus) and self.owner.LOS:
                         r = math.degrees(self.app.getAngleFrom(self.owner.pos, self.app.player.pos))
+                        self.aimAt = self.app.player.pos.copy()
                     else:
                         r = 135 if not self.owner.facingRight else 45
                     self.lockR = r
@@ -249,6 +250,7 @@ class Weapon:
 
             elif not self.owner.running:
                 mouse_world = self.app.inverseConvertPos(self.app.mouse_pos)
+                self.aimAt = mouse_world
                 r = math.degrees(self.app.getAngleFrom(self.owner.pos, v2(mouse_world)))
 
                     

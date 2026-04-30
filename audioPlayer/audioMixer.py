@@ -224,6 +224,7 @@ class AudioSource:
         self.length = self.data.shape[0]
         self.position = 0
         self.volume = 1.0
+        self.sample_rate = sample_rate
         self.pan = 0.0  # -1.0 = left, 1.0 = right
         self.left_gain = np.float32(np.sqrt(2) / 2)
         self.right_gain = np.float32(np.sqrt(2) / 2)
@@ -245,6 +246,9 @@ class AudioSource:
 
         # Optional playback length limiter (seconds)
         self.max_duration = None
+
+    def getTime(self):
+        return self.position / (self.length) * (self.length / self.sample_rate) # (1000 / 10000) * (10000 / 5000) = 0.1 * 2 = 0.2 secs / 2 seconds
 
     def set_lowpass(self, cutoff_hz):
         self.cutoff = float(cutoff_hz)
@@ -357,7 +361,7 @@ class AudioMixer:
             source.positional = True
             source.pos = v2(pos) if not isinstance(pos, v2) else pos
             source.falloff_max_dist = audioFallOffMaxDist
-            source.base_volume = volume * self.app.AUDIOVOLUME # your previous scaling: volume * 0.3 (you can pass a param instead)
+            source.base_volume = volume * self.app.AUDIOVOLUME 
             source.loop = loop
             source.position = 0
             source.active = True

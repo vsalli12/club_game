@@ -30,7 +30,8 @@ from dynamicBakedLight import StaticLight, make_muzzle_flash_frames
 from scorepopup import ScorePopup
 from slidingDoor import SlidingDoor
 import traceback
-
+from clubgoer import ClubGoer
+from enemies.reinforcer import Reinforcement
 def blit_glitch(screen, image, pos, glitch = 2, diagonal = False, black_bar_chance = 15, black_bar_color = (0,0,0)):
     upper_pos = 0
     lower_pos = random.randint(2, 5)
@@ -52,7 +53,7 @@ def blit_glitch(screen, image, pos, glitch = 2, diagonal = False, black_bar_chan
 class App:
     
     def __init__(self):
-        self.res = v2(1920,1080)
+        self.res = v2(2560,1440)
         self.RENDER_SCALE = self.res.x / 2560
         self.screen = pygame.display.set_mode((self.res.x, self.res.y), pygame.SCALED | pygame.FULLSCREEN) #
         self.clock = pygame.time.Clock()
@@ -91,6 +92,8 @@ class App:
         self.currLoad = "Initializing"
         self.losScreen = pygame.Surface(self.res)
         self.losScreen.set_colorkey((255,255,255))
+
+        self.cameraRect = pygame.Rect((0,0), self.res)
 
         self.gunFont = pygame.font.Font("texture/terminal.ttf", int(60*self.RENDER_SCALE))
         self.infoFont = pygame.font.Font("texture/terminal.ttf", int(30*self.RENDER_SCALE))
@@ -159,14 +162,21 @@ class App:
         self.camPD = v2(0,0)
         self.camPD_f = v2(0,0)
         self.cacheLock = threading.Lock()
-        self.player = Player(self, v2(0,0), "texture/crack.png", True, True)
-        self.bouncerTemp = Player(self, v2(0,0), "texture/bouncer.png", aiType="pistol")
+        self.player = Player(self, v2(0,0), "texture/playerSprites/player", True, True)
 
-        self.enemyTemp = Enemy(self, v2(0,0))
+        self.enemyTemp = Enemy(self, v2(0,0), path="texture/playerSprites/security")
+        self.reinforcerTemp = Reinforcement(self, v2(0,0), path="texture/playerSprites/soldier")
+
+
+        self.famasSound = self.loadSound("audio/assault")
 
         self.WEAPON_USPS = Weapon(self, None, texture = "texture/pistol.png", name = "USP-S", 
                                   sizeMult=0.5, holdoutPos = -2.0, shotSound="audio/silenced2.wav", 
                                   rps = 10, magCap = 12, damage = 25)
+
+        self.WEAPON_FAMAS = Weapon(self, None, texture = "texture/famas.png", name = "FAMAS", 
+                                  shotSound=self.famasSound, 
+                                  rps = 8, magCap = 30, damage = 12)
 
         self.lastSec = -1
         self.addEntity(self.player)
@@ -203,6 +213,8 @@ class App:
 
         self.prevArea = False
         self.areaAnim = 0
+
+        self.debugStuff = False
 
         self.level = Level.load()
 
@@ -281,10 +293,22 @@ class App:
         SlidingDoor(self, (-11.0, 5.0), [2,0.25], "h")
         SlidingDoor(self, (8.5, 7.0), [0.25,2], "w")
 
+        self.clubGoerTemp = []
+
+        #for x in os.listdir("texture/npcs"):
+        #    self.clubGoerTemp.append(ClubGoer(self, v2(0,0), f"texture/npcs/{x}"))
+
+        if False:
+            for x in range(50):
+                temp = random.choice(self.clubGoerTemp)
+                self.addEntity(temp.duplicate(v2(0,0)))
+
         self.loading = False
 
         #self.dialog = ["Moi", "Moikka, mikä sun nimi on?", "Ei se sulle kuulu", ]
 
+    def onScreen(self, pos):
+        return self.cameraRect.collidepoint(self.convertPos(pos))
 
     def scaleTexture(self, image, desiredHeight = None, desiredWidth = None):
         return pygame.transform.scale_by(image, desiredHeight*self.RENDER_SCALE / image.get_height() if desiredHeight else desiredWidth*self.RENDER_SCALE / image.get_width())
@@ -301,6 +325,10 @@ class App:
         if dynamic.shape[0] == 0:
             return self.los_walls
         return np.concatenate([self.los_walls, dynamic], axis=0)
+    
+    
+            
+
 
     def renderLights(self):
         self.light_frame_time += self.dt
@@ -319,12 +347,22 @@ class App:
                 continue
             self.screen.blit(surf, screen_pos, special_flags=pygame.BLEND_RGB_MULT)
 
+            if self.debugStuff:
+                pygame.draw.rect(self.screen, (255,0,0), (screen_pos, surf.get_size()), width = 1)
+                t = self.fontSmaller.render("STATIC LIGHT", True, (255,0,0))
+                self.screen.blit(t, screen_pos)
+
         for surf, r in self.light_frames[lightframe]:
             screen_pos = v2(r.topleft) - cam_render
             screen_pos = (int(screen_pos.x), int(screen_pos.y))
             if not screen_rect.colliderect((screen_pos, surf.get_size())):
                 continue
             self.screen.blit(surf, screen_pos, special_flags=pygame.BLEND_RGB_MULT)
+
+            if self.debugStuff:
+                pygame.draw.rect(self.screen, (0,255,0), (screen_pos, surf.get_size()), width = 1)
+                t = self.fontSmaller.render(f"DYNAMIC LIGHT FRAME {lightframe}", True, (0,255,0))
+                self.screen.blit(t, screen_pos)
 
         for MF in self.muzzleFlashes:
             MF.renderTo(self.screen)
@@ -370,11 +408,26 @@ class App:
             closest_x = max(r.left, min(light.pos.x, r.right))
             closest_y = max(r.top,  min(light.pos.y, r.bottom))
             return v2(closest_x, closest_y).distance_to(light.pos) < light.radius
+        
+        def light_reaches_rect(light, r):
+            radius = int(light.radius * self.RENDER_SCALE)
+            # r is already in render space at this point (rectConverted)
+            lx = int(r.left - light.pos.x * self.RENDER_SCALE + radius)
+            ly = int(r.top  - light.pos.y * self.RENDER_SCALE + radius)
+
+            x0 = max(0, lx);            y0 = max(0, ly)
+            x1 = min(radius*2, lx+r.width); y1 = min(radius*2, ly+r.height)
+
+            if x0 >= x1 or y0 >= y1:
+                return False
+
+            arr = pygame.surfarray.array3d(light.los_surf)
+            return bool(arr[x0:x1, y0:y1].max() > 0)
 
         rect_lights  = {}
         rect_dynamic = {}
         for i, r in enumerate(self.floorRects):
-            touching = [L for L in self.level.lights if light_touches_rect(L, r)]
+            touching = [L for L in self.level.lights if light_reaches_rect(L, r)]
             rect_lights[i]  = touching
             rect_dynamic[i] = any(not L.is_static for L in touching)
 
@@ -456,6 +509,7 @@ class App:
             if self.enemiesSeePlayer >= 1:
                 self.enemiesSpottedPlayer = True
                 self.playPositionalAudio("audio/spotted.wav", self.player.pos, volume=1.2)
+                self.spawnReinforcements()
 
 
 
@@ -518,7 +572,7 @@ class App:
 
 
     def addEntity(self, ent):
-        if isinstance(ent, (Player, Enemy)):
+        if isinstance(ent, (Player, Enemy, Reinforcement)):
             self.entities["players"].append(ent)
 
         elif isinstance(ent, Bullet):
@@ -548,6 +602,18 @@ class App:
                 return l
             
 
+    def spawnReinforcements(self):
+
+        areas = [x[0] for x in self.mapAreas if x[1] == AreaType.REINFORCE]
+        for i in range(5):
+
+            pos = self.randomPosOfArea(random.choice(areas))
+
+            enemy = self.reinforcerTemp.duplicate(pos)
+            self.WEAPON_FAMAS.duplicate(enemy)
+            self.addEntity(enemy)
+            
+
     def spawnEnemies(self):
 
         if len(self.entities["players"]) > 8:
@@ -558,9 +624,8 @@ class App:
             return
         self.enemySpawnTimer = 0
 
-        a = random.uniform(0, math.pi*2)
         areas = [x[0] for x in self.mapAreas if x[1] == AreaType.ENEMYSPAWN]
-        pos = v2(random.choice(areas).center)
+        pos = self.randomPosOfArea(random.choice(areas))
 
         if self.nav.can_see(pos, self.player.pos):
             return
@@ -691,6 +756,9 @@ class App:
 
         return self.AUDIOMIXER.playPositionalAudio(audio, pos, volume=volume, loop = loop)
     
+    def randomPosOfArea(self, r):
+        return v2(random.randint(r.left + 45, r.right - 45), random.randint(r.top + 45, r.bottom - 45))
+    
     def drawHiddenHud(self):
         prog = self.enemiesSeePlayer  # [0,1]
         state = self.enemiesSpottedPlayer
@@ -700,7 +768,7 @@ class App:
             self.stateAnim = 0.0
             self.prevSpotted = state
 
-        areaDenied = self.playerInRestricted
+        areaDenied = self.playerInRestricted or (not self.enemiesSpottedPlayer and not self.player.holster) or self.reinforcersAlive
 
         
 
@@ -738,7 +806,16 @@ class App:
         self.screen.blit(surf, rect.topleft)
 
         if self.areaAnim > 0:
-            baseA = self.infoFont.render("RESTRICTED AREA", True, (255, 80, 80)).convert_alpha()
+
+            if self.reinforcersAlive:
+                self.labelWarn = "REINFORCEMENTS INCOMING"
+
+            elif self.playerInRestricted:
+                self.labelWarn = "RESTRICTED AREA"
+            elif (not self.enemiesSpottedPlayer and not self.player.holster):
+                self.labelWarn = "WEAPON VISIBLE"
+
+            baseA = self.infoFont.render(self.labelWarn, True, (255, 80, 80)).convert_alpha()
             tA = 1 - (1 - self.areaAnim)**3
             scaleA = 1.0 + 0.25 * (1 - tA)
             w = int(baseA.get_width() * scaleA)
@@ -840,12 +917,19 @@ class App:
             keypress.key_press_manager(self)
             #mouseoffset = (self.mouse_pos - self.res/2)*0.35
             
+            
             self.screen.fill((0,0,0))
             
 
             if self.loading:
                 self.loadRender()
                 continue
+
+            if "mouse1" in self.keypress:
+                self.debugStuff = not self.debugStuff
+
+            self.songBPM = 155
+            self.songTime = self.loop.getTime()
 
             self.los_surf.fill((0,0,0))
 
@@ -886,8 +970,17 @@ class App:
 
             self.player.tickPlayerHealth()
             self.sightToPlayer = False
+
             for key in self.entityTypes:
                 for x in self.entities[key]:
+                    if hasattr(x, "drawShadow"):
+                        x.drawShadow()
+
+            for key in self.entityTypes:
+
+                entities_temp = sorted(self.entities[key], key=lambda x: x.pos.y)
+
+                for x in entities_temp:
                     if x == self.player:
                         continue
                     x.tick()
@@ -896,7 +989,9 @@ class App:
 
             self.playerInRestricted = self.checkPositionArea(self.player.pos) == AreaType.FORBIDDEN
 
-            if self.sightToPlayer:
+            self.reinforcersAlive = any(isinstance(e, Reinforcement) for e in self.entities["players"])
+
+            if self.sightToPlayer or self.reinforcersAlive:
                 self.incrementSight()
             else:
                 if self.enemiesSpottedPlayer:
@@ -931,7 +1026,7 @@ class App:
                 self.player.pos * self.RENDER_SCALE,   # world space
                 self.camPD * self.RENDER_SCALE - self.res/2,        # world camera
                 self.effective_los_walls,    # Converted to render scale
-                debug=False
+                debug=self.debugStuff
             )
 
             if self.DOLIGHTS:

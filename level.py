@@ -11,6 +11,7 @@ class AreaType(Enum):
     HALLWAY    = "HALLWAY"
     FORBIDDEN  = "FORBIDDEN"
     ENEMYSPAWN = "ENEMYSPAWN"
+    REINFORCE = "REINFORCE"
 
 AREA_COLORS = {
     AreaType.OUTSIDE:    (100, 180, 100),
@@ -20,6 +21,7 @@ AREA_COLORS = {
     AreaType.HALLWAY:    (200, 200, 200),
     AreaType.FORBIDDEN:  (220,  40,  40),
     AreaType.ENEMYSPAWN:  (40, 255, 40),
+    AreaType.REINFORCE: (220,  40,  40),
 }
 
 AREA_TYPES = list(AreaType)  # auto-populated — add to enum, it appears in cycle

@@ -23,8 +23,13 @@ class ParentActor:
         self.vel = v2(0,0)
         self.speed = 500
 
+        self.USESPRITE = True
+
         if path:
-            self.processImage(path)
+            if self.USESPRITE:
+                self.useSprites(path)
+            else:
+                self.processImage(path)
 
         self.facingRight = True
         self.walking = 0
@@ -50,6 +55,22 @@ class ParentActor:
         self.breatheTimer = 0
         self.weapon = None
         self.touchingWall = 0
+
+        self.ignoreSpottedStatus = False
+
+
+    def useSprites(self, path):
+
+        self.sprites = {} 
+
+        front = pygame.image.load(path + "/front.png").convert_alpha()
+        self.sprites["front"] = self.app.scaleTexture(front, desiredHeight=100)
+
+        right = pygame.image.load(path + "/right.png").convert_alpha()
+        self.sprites["right"] = self.app.scaleTexture(right, desiredHeight=100)
+
+        back = pygame.image.load(path + "/back.png").convert_alpha()
+        self.sprites["back"] = self.app.scaleTexture(back, desiredHeight=100)
 
 
     def mandatoryTick(self):
@@ -96,6 +117,9 @@ class ParentActor:
             self.blink = random.uniform(0.2, 1.0)
         
         self.dvel = self.vel * 0.1 + self.dvel * 0.9
+
+        self.ableToFire = (not self.isRunning() or (self.isRunning() and self.weapon.isReloading())) and not self.holster and self.weapon and not self.app.interactingWith
+
 
 
     def takeDamage(self, damage, bloodAngle = None):
@@ -208,16 +232,51 @@ class ParentActor:
         #return (self.rollTime - self.rolling)/self.rollTime < 0.5
 
 
-    def render(self):
+    def drawShadow(self):
         shadowPos = (self.hitBox.centerx, self.hitBox.bottom)
         r = pygame.Rect((0,0), (80, 40))
         r.center = self.app.convertPos(shadowPos)
         pygame.draw.ellipse(self.app.screen, (20,20,20), r)
 
+
+    def render(self):
         breathingMod = 1
-        im = self.image if self.blink > 0.1 else self.imageBat
-        if self.facingRight:
-            im = pygame.transform.flip(im, True, False)
+
+
+        if self.USESPRITE:
+
+            spriteFollowsGun = (self.player and self.ableToFire) or (not self.player and self.shooting)
+
+            if spriteFollowsGun:
+                angle = math.degrees(self.app.getAngleFrom(self.pos, v2(self.weapon.aimAt)))
+            else:
+                if self.vel.length_squared() > 1e-6:
+                    angle = v2(1, 0).angle_to(self.vel)
+                else:
+                    angle = 90
+
+            angle %= 360
+
+            # Direction selection
+            if 225 <= angle < 315:
+                sprite = "back"
+            elif 45 <= angle < 135:
+                sprite = "front"
+            else:
+                sprite = "right"
+
+            im = self.sprites[sprite]
+
+            # Flip only for left-facing side region
+            self.facingRight = True
+            if 135 <= angle < 225:
+                im = pygame.transform.flip(im, True, False)
+                self.facingRight = False
+        else:
+            im = self.image if self.blink > 0.1 else self.imageBat
+            if self.facingRight:
+                im = pygame.transform.flip(im, True, False)
+
         self.breatheY = 2.5*math.sin(self.breatheTimer * 2 * math.pi) * breathingMod
         
         self.yComponent = 0
@@ -226,14 +285,17 @@ class ParentActor:
         yAdd = 0
         Addrotation = 0
 
+        if hasattr(self, "jumpHeight"):
+            yAdd += self.jumpHeight
+
 
         if self.walking > 0 and not self.isRolling():
             s = self.stepI // 0.5
 
             self.stepI += self.app.dt * self.walking * 1.5
 
-            if s != self.stepI // 0.5:
-                self.app.playPositionalAudio("audio/waddle1.wav", self.pos, volume=0.5)
+            #if s != self.stepI // 0.5:
+            #    self.app.playPositionalAudio("audio/waddle1.wav", self.pos, volume=0.5)
 
 
             # The player should be swinging from side to side when walking
@@ -252,7 +314,7 @@ class ParentActor:
         rollReachScale = 0 
 
         if self.rolling > 0:
-            self.facingRight = self.rollingRight
+            #self.facingRight = self.rollingRight
 
             t = (self.rollTime - self.rolling) / self.rollTime  # 0 → 1
 
@@ -273,12 +335,15 @@ class ParentActor:
             Addrotation += self.rollAngle
 
         elif self.running:
-            self.facingRight = self.dvel.x > 0
+            #self.facingRight = self.dvel.x > 0
+            pass
 
         elif not self.holster and self.weapon and self.player:
-            self.facingRight = not 90 <= self.weapon.ROTATION <= 270
+            #self.facingRight = not 90 <= self.weapon.ROTATION <= 270
+            pass
         else:
-            self.facingRight = self.dvel.x > 0
+            #self.facingRight = self.dvel.x > 0
+            pass
 
         if self.stepI > 1:
             self.stepI = 0

@@ -15,6 +15,7 @@ class Enemy(ParentActor):
         self.walkTo = None
         self.speed = 700
         self.player = False
+        
 
     def tick(self):
         self.mandatoryTick()
@@ -33,18 +34,21 @@ class Enemy(ParentActor):
 
         self.botWalk()
         
-        self.render()
-        
+        if self.app.onScreen(self.pos):
+            self.render()         
 
-        if self.weapon:
-            self.weapon.tick()
-            self.weapon.fireTick()
+            if self.weapon:
+                self.weapon.tick()
+                self.weapon.fireTick()
 
     def duplicate(self, atPos = v2(0,0)):
-        p = Enemy(self.app, atPos, path="") 
-        p.image = self.image
-        p.imageBat = self.imageBat
-        p.hudImage = self.hudImage
+        p = Enemy(self.app, atPos, path="")
+        if self.USESPRITE:
+            p.sprites = self.sprites
+        else:
+            p.image = self.image
+            p.imageBat = self.imageBat
+            p.hudImage = self.hudImage
         return p
     
     def botShoot(self):

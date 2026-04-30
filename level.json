@@ -736,7 +736,9 @@
         255
       ],
       "intensity": 1.0,
-      "oscillations": 4
+      "oscillations": 4,
+      "min_intensity": 0.1,
+      "falloff": 2.0
     },
     {
       "type": "PulseLight",
@@ -751,7 +753,9 @@
         255
       ],
       "intensity": 1.0,
-      "oscillations": 4
+      "oscillations": 4,
+      "min_intensity": 0.1,
+      "falloff": 2.0
     },
     {
       "type": "PulseLight",
@@ -766,7 +770,9 @@
         255
       ],
       "intensity": 1.0,
-      "oscillations": 4
+      "oscillations": 4,
+      "min_intensity": 0.1,
+      "falloff": 2.0
     },
     {
       "type": "PulseLight",
@@ -781,7 +787,9 @@
         255
       ],
       "intensity": 1.0,
-      "oscillations": 4
+      "oscillations": 4,
+      "min_intensity": 0.1,
+      "falloff": 2.0
     },
     {
       "type": "StaticLight",
@@ -1303,6 +1311,13 @@
       2,
       14,
       "FORBIDDEN"
+    ],
+    [
+      -2,
+      39,
+      5,
+      12,
+      "REINFORCE"
     ]
   ]
 }

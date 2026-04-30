@@ -154,7 +154,6 @@ class Player(ParentActor):
             if "mouse2" in self.app.keypress:
                 self.weapon.melee()
 
-        self.ableToFire = (not self.isRunning() or (self.isRunning() and self.weapon.isReloading())) and not self.holster and self.weapon and not self.app.interactingWith
 
 
         

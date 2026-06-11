@@ -47,10 +47,8 @@ def get_wall_angles(pos, walls, out):
 
 @jit(nopython=True)
 def _wall_span(a1, a2):
-    # Returns (start, span): start is the CCW-earlier endpoint,
-    # span is the shorter angular width. Always < pi for a normal wall.
-    fwd = (a2 - a1) % math.tau   # CCW arc from a1 to a2
-    bwd = (a1 - a2) % math.tau   # CCW arc from a2 to a1
+    fwd = (a2 - a1) % math.tau
+    bwd = (a1 - a2) % math.tau
     if fwd <= bwd:
         return a1, fwd
     else:
@@ -59,7 +57,6 @@ def _wall_span(a1, a2):
 
 @jit(nopython=True)
 def _in_span(a, start, span):
-    # True if angle a is within [start, start+span) mod tau
     return (a - start) % math.tau <= span
 
 
@@ -67,7 +64,6 @@ def _in_span(a, start, span):
 def filter_occluded_walls(angle_array):
     n = angle_array.shape[0]
 
-    # insertion sort indices by ascending distance
     order = np.arange(n)
     for i in range(1, n):
         key = order[i]
@@ -201,3 +197,61 @@ def collect_polygon_points(triangle_array):
         out[i * 2 + 1, 0] = triangle_array[i, 5]
         out[i * 2 + 1, 1] = triangle_array[i, 6]
     return out
+
+
+@jit(nopython=True)
+def cast_ray(px, py, angle, angle_array, screen_w, screen_h):
+    RAY_LEN = 4000.0
+    rx = math.cos(angle) * RAY_LEN + px
+    ry = math.sin(angle) * RAY_LEN + py
+    best_x, best_y = rx, ry
+    best_d = RAY_LEN * RAY_LEN + 1.0
+    for j in range(angle_array.shape[0]):
+        if angle_array[j, 7] == 0:
+            continue
+        wx1, wy1 = angle_array[j, 0], angle_array[j, 1]
+        wx2, wy2 = angle_array[j, 3], angle_array[j, 4]
+        if _segments_intersect(px, py, rx, ry, wx1, wy1, wx2, wy2):
+            ok, ix, iy = _line_intersection(px, py, rx, ry, wx1, wy1, wx2, wy2)
+            if ok:
+                d = (ix - px)**2 + (iy - py)**2
+                if d < best_d:
+                    best_d = d
+                    best_x, best_y = ix, iy
+    best_x = min(max(best_x, 0.0), float(screen_w))
+    best_y = min(max(best_y, 0.0), float(screen_h))
+    return best_x, best_y
+
+
+@jit(nopython=True)
+def get_fov_corners(px, py, look_angle, fov, angle_array, screen_w, screen_h):
+    half = fov * 0.5
+    a_left  = (look_angle - half) % math.tau
+    a_right = (look_angle + half) % math.tau
+    lx, ly = cast_ray(px, py, a_left,  angle_array, screen_w, screen_h)
+    rx, ry = cast_ray(px, py, a_right, angle_array, screen_w, screen_h)
+    out = np.zeros((2, 4), dtype=np.float64)
+    out[0, 0] = a_left;  out[0, 1] = lx;  out[0, 2] = ly;  out[0, 3] = 1.0
+    out[1, 0] = a_right; out[1, 1] = rx;  out[1, 2] = ry;  out[1, 3] = 1.0
+    return out
+
+
+@jit(nopython=True)
+def filter_points_in_fov(points, look_angle, fov):
+    half = fov * 0.5
+    a_left  = (look_angle - half) % math.tau
+    a_right = (look_angle + half) % math.tau
+    n = points.shape[0]
+    out = np.zeros((n, 4), dtype=np.float64)
+    count = 0
+    wraps = a_right < a_left
+    for i in range(n):
+        a = points[i, 0]
+        inside = (a >= a_left or a <= a_right) if wraps else (a_left <= a <= a_right)
+        if inside:
+            out[count, 0] = points[i, 0]
+            out[count, 1] = points[i, 1]
+            out[count, 2] = points[i, 2]
+            out[count, 3] = points[i, 3]
+            count += 1
+    return out[:count]

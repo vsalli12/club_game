@@ -12,19 +12,19 @@ class Wall:
             return None
 
         # compute overlap on both axes
-        dx1 = self.rect.right - hb.left +1  # push right
-        dx2 = hb.right - self.rect.left -1  # push left
-        dy1 = self.rect.bottom - hb.top +1  # push down
-        dy2 = hb.bottom - self.rect.top -1  # push up
+        dx1 = self.rect.right - hb.left
+        dx2 = hb.right - self.rect.left
+        dy1 = self.rect.bottom - hb.top
+        dy2 = hb.bottom - self.rect.top
 
         # choose minimal displacement
         min_dx = dx1 if dx1 < dx2 else -dx2
         min_dy = dy1 if dy1 < dy2 else -dy2
 
         if abs(min_dx) < abs(min_dy):
-            hb.x += min_dx
+            hb.x += min_dx + (1 if min_dx > 0 else -1)
         else:
-            hb.y += min_dy
+            hb.y += min_dy + (1 if min_dy > 0 else -1)
 
         return hb.center
     

@@ -23,7 +23,7 @@ class ParentActor:
         self.vel = v2(0,0)
         self.speed = 500
 
-        self.USESPRITE = True
+        self.USESPRITE = self.app.USESPRITES
 
         if path:
             if self.USESPRITE:
@@ -54,7 +54,15 @@ class ParentActor:
         self.shooting = False
         self.breatheTimer = 0
         self.weapon = None
+        self.holdable = None
         self.touchingWall = 0
+
+        self.yComponent = 0
+        self.xComponent = 0
+        self.rotation = 0
+        self.breatheY = 0
+
+        self.currHeld = self.weapon
 
         self.ignoreSpottedStatus = False
 
@@ -74,6 +82,9 @@ class ParentActor:
 
 
     def mandatoryTick(self):
+
+        self.currHeld = self.weapon if self.weapon and not self.holster else self.holdable
+
         speedMod = 0.85
         if not self.holster:
             speedMod = 0.75
@@ -98,6 +109,10 @@ class ParentActor:
         if moved:
             self.pos = v2(self.hitBox.center)
             self.touchingWall += self.app.dt
+
+            if self.isRolling():
+                self.rolling = min(self.rolling, 0.4 * self.rollTime)
+
         else:
             self.touchingWall = 0
 
@@ -314,7 +329,8 @@ class ParentActor:
         rollReachScale = 0 
 
         if self.rolling > 0:
-            #self.facingRight = self.rollingRight
+            if not self.USESPRITE:
+                self.facingRight = self.rollingRight
 
             t = (self.rollTime - self.rolling) / self.rollTime  # 0 → 1
 
@@ -335,14 +351,17 @@ class ParentActor:
             Addrotation += self.rollAngle
 
         elif self.running:
-            #self.facingRight = self.dvel.x > 0
+            if not self.USESPRITE:
+                self.facingRight = self.dvel.x > 0
             pass
 
         elif not self.holster and self.weapon and self.player:
-            #self.facingRight = not 90 <= self.weapon.ROTATION <= 270
+            if not self.USESPRITE:
+                self.facingRight = not 90 <= self.weapon.ROTATION <= 270
             pass
         else:
-            #self.facingRight = self.dvel.x > 0
+            if not self.USESPRITE:
+                self.facingRight = self.dvel.x > 0
             pass
 
         if self.stepI > 1:

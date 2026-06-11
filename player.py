@@ -12,6 +12,7 @@ from animationHelper import *
 from weapon import Weapon
 from objects.pill import Pill
 from parentActor import ParentActor
+from item import Item
 class Player(ParentActor):
     def __init__(self, app, pos, path = "texture/crack.png", player = False, weapon = False, aiType = "none"):
 
@@ -27,6 +28,7 @@ class Player(ParentActor):
 
         if weapon:
             self.weapon = Weapon(app, self, texture = "texture/ak47.png", name = "AK-47")
+            #self.holdable = Item(app, self, texture = "texture/speaker.png", name = "Speaker", description="Plays banger tracks", price=50)
         else:
             self.weapon = None
 
@@ -156,8 +158,6 @@ class Player(ParentActor):
 
 
 
-        
-
         if self.player:
             self.tryToWalk()
         else:
@@ -166,30 +166,19 @@ class Player(ParentActor):
 
         if self.holster and self.weapon:
             self.weapon.tick()
+        elif not self.holster and self.holdable:
+            self.holdable.tick()
 
         self.render()
         
-        if self.player:
-            if not self.holster and self.weapon:
-                self.weapon.tick()
+        if self.currHeld:
+            self.currHeld.tick()
+            if self.currHeld == self.weapon:
                 self.weapon.fireTick()
                 if self.ableToFire:
                     if "mouse0" in self.app.keypress_held_down:
                         self.weapon.holdToFire()
-        else:
-
-            if self.isPistolAI():
-                if self.weapon:
-                    self.weapon.tick()
-                    self.weapon.fireTick()
-
-                if self.shooting:
-                    self.aimTimer -= self.app.dt
-                    if self.aimTimer <= 0:
-                        self.weapon.holdToFire()
-
-                    if self.weapon.isReloading():
-                        self.shooting = False
+     
 
         
 

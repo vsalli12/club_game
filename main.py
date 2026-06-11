@@ -1,6 +1,8 @@
 import random
 import subprocess, sys
 import threading
+
+import psutil
 from dialog import Dialog
 import pygame
 import keypress, os
@@ -32,6 +34,7 @@ from slidingDoor import SlidingDoor
 import traceback
 from clubgoer import ClubGoer
 from enemies.reinforcer import Reinforcement
+from levelGenHelper import generateLights
 def blit_glitch(screen, image, pos, glitch = 2, diagonal = False, black_bar_chance = 15, black_bar_color = (0,0,0)):
     upper_pos = 0
     lower_pos = random.randint(2, 5)
@@ -72,6 +75,9 @@ class App:
         self.active_widget = None
         self.DOLIGHTS = True
 
+        self.process = psutil.Process(os.getpid())
+        self.currMemory = 0
+    
 
         t = threading.Thread(target=self.loadWrapped)
         t.daemon = True
@@ -162,10 +168,23 @@ class App:
         self.camPD = v2(0,0)
         self.camPD_f = v2(0,0)
         self.cacheLock = threading.Lock()
-        self.player = Player(self, v2(0,0), "texture/playerSprites/player", True, True)
 
-        self.enemyTemp = Enemy(self, v2(0,0), path="texture/playerSprites/security")
-        self.reinforcerTemp = Reinforcement(self, v2(0,0), path="texture/playerSprites/soldier")
+        self.USESPRITES = False
+
+        if self.USESPRITES:
+            pathPlayer = "texture/playerSprites/player"
+            pathSec = "texture/playerSprites/security"
+            pathSold = "texture/playerSprites/soldier"
+
+        else:
+            pathPlayer = "texture/crack.png"
+            pathSec = "texture/khaled2.png"
+            pathSold = "texture/soldier.png"
+
+        
+        self.player = Player(self, v2(0,0), pathPlayer, True, True) # "texture/playerSprites/player"
+        self.enemyTemp = Enemy(self, v2(0,0), path=pathSec)
+        self.reinforcerTemp = Reinforcement(self, v2(0,0), path=pathSold)
 
 
         self.famasSound = self.loadSound("audio/assault")
@@ -218,6 +237,8 @@ class App:
 
         self.level = Level.load()
 
+        self.currMemory = 0
+
         #self.mapAreas = level.areas
         TILESIZE = 100
         self.mapAreas = [(pygame.Rect(a[0] * TILESIZE, a[1] * TILESIZE, a[2] * TILESIZE, a[3] * TILESIZE), a[4]) for a in self.level.areas]
@@ -255,7 +276,7 @@ class App:
             self.MUZZLE_FLASH_FRAMES = []
             for i in range(20):
                 self.MUZZLE_FLASH_FRAMES.append(make_muzzle_flash_frames())
-            self.generateLights("level.json")
+            generateLights(self, "level.json")
             
         self.muzzleFlashes = []
         self.currLoad = "Lights done"
@@ -281,7 +302,7 @@ class App:
         while self.warmupSound.active:
             time.sleep(0.25)
 
-        self.loop = self.playPositionalAudio("audio/klbutekno.wav", v2(0,0), loop = True, volume=0.5)
+        self.loop = self.playPositionalAudio("audio/klbutekno.wav", v2(0,0), loop = True, volume=0.25)
         self.loop.pitch = 1
 
         self.enemySpawnTimer = 0
@@ -376,112 +397,7 @@ class App:
         position = v2(random.randint(randomArea.left + 45, randomArea.right - 45), random.randint(randomArea.top + 45, randomArea.bottom - 45))
         return position
 
-    def generateLights(self, level_file):
-        print("Generating lights.")
-        
-        t = time.time()
-        
-
-        self.currLoad = "Generating lights"
-        
-        self.loadPoint = 0
-
-        self.maxLoad = len(self.level.lights) + len(self.floorRects)
-
-        self.mapCorner = v2(
-            min(w.rect.left for w in self.walls),
-            min(w.rect.top  for w in self.walls)
-        )
-
-        for i, LIGHT in enumerate(self.level.lights):
-            self.loadPoint += 1
-            self.currLoad = f"Light {i}: Making wall mask"
-            r = int(LIGHT.radius * self.RENDER_SCALE)
-            LIGHT.los_surf = pygame.Surface((r * 2, r * 2))
-            LIGHT.los_surf.fill((0, 0, 0))
-            # Camera = render-space top-left of this light's bounding box
-            light_cam = LIGHT.pos * self.RENDER_SCALE - v2(r, r)
-            los_draw(LIGHT.los_surf, LIGHT.pos * self.RENDER_SCALE, light_cam, self.los_walls, debug=False)
-            LIGHT.is_static = isinstance(LIGHT, StaticLight)
-
-        def light_touches_rect(light, r):
-            closest_x = max(r.left, min(light.pos.x, r.right))
-            closest_y = max(r.top,  min(light.pos.y, r.bottom))
-            return v2(closest_x, closest_y).distance_to(light.pos) < light.radius
-        
-        def light_reaches_rect(light, r):
-            radius = int(light.radius * self.RENDER_SCALE)
-            # r is already in render space at this point (rectConverted)
-            lx = int(r.left - light.pos.x * self.RENDER_SCALE + radius)
-            ly = int(r.top  - light.pos.y * self.RENDER_SCALE + radius)
-
-            x0 = max(0, lx);            y0 = max(0, ly)
-            x1 = min(radius*2, lx+r.width); y1 = min(radius*2, ly+r.height)
-
-            if x0 >= x1 or y0 >= y1:
-                return False
-
-            arr = pygame.surfarray.array3d(light.los_surf)
-            return bool(arr[x0:x1, y0:y1].max() > 0)
-
-        rect_lights  = {}
-        rect_dynamic = {}
-        for i, r in enumerate(self.floorRects):
-            touching = [L for L in self.level.lights if light_reaches_rect(L, r)]
-            rect_lights[i]  = touching
-            rect_dynamic[i] = any(not L.is_static for L in touching)
-
-        def bake_rect(i, r, x):
-            rect_surf = pygame.Surface((r.width, r.height)).convert()
-            rect_surf.fill((40, 40, 40))
-            for LIGHT in rect_lights[i]:
-                radius = int(LIGHT.radius * self.RENDER_SCALE)
-
-                if not LIGHT.scaled_frames[x]:
-
-                    QUALITY = 5
-                    smR = int(radius * 2 / QUALITY)
-
-                    scaled = pygame.transform.smoothscale(LIGHT.frames[x], (smR, smR))
-                    if QUALITY > 1:
-                        scaled = pygame.transform.scale(scaled, (radius * 2, radius * 2))
-                    # Apply the LOS mask: black out areas the light can't reach
-                    scaled.blit(LIGHT.los_surf, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
-                    LIGHT.scaled_frames[x] = scaled
-                else:
-                    scaled = LIGHT.scaled_frames[x]
-
-                blit_pos = LIGHT.pos * self.RENDER_SCALE - v2(radius) - v2(r.topleft)
-                rect_surf.blit(scaled, blit_pos, special_flags=pygame.BLEND_RGB_ADD)
-                
-            return rect_surf
-
-        NUM_FRAMES = max([len(x.frames) for x in self.level.lights])
-        print("FRAMES:", NUM_FRAMES)
-
-        self.light_static = []
-        self.light_frames = [[] for _ in range(NUM_FRAMES)]
-
-        for i, r in enumerate(self.floorRects):
-            self.loadPoint += 1
-            self.currLoad = f"Lighting floor: {i}/{len(self.floorRects)}"
-
-            rectConverted = r.copy()
-            rectConverted.x = int(r.x * self.RENDER_SCALE)
-            rectConverted.y = int(r.y * self.RENDER_SCALE)
-            rectConverted.width = int(r.width * self.RENDER_SCALE)
-            rectConverted.height = int(r.height * self.RENDER_SCALE)
-           
-
-            if not rect_dynamic[i]:
-                self.light_static.append((bake_rect(i, rectConverted, 0), rectConverted))
-            else:
-                for x in range(NUM_FRAMES):
-                    self.light_frames[x].append((bake_rect(i, rectConverted, x), rectConverted))
-
-        self.light_frame_time = 0
-        print(f"Lights drawn. Elapsed time: {time.time() - t:.1f}s")
-        del self.level.lights
+    
         
     def checkPositionArea(self, pos):
         for rect, a_t in self.mapAreas:
@@ -509,7 +425,7 @@ class App:
             if self.enemiesSeePlayer >= 1:
                 self.enemiesSpottedPlayer = True
                 self.playPositionalAudio("audio/spotted.wav", self.player.pos, volume=1.2)
-                self.spawnReinforcements()
+                #self.spawnReinforcements()
 
 
 
@@ -807,13 +723,20 @@ class App:
 
         if self.areaAnim > 0:
 
-            if self.reinforcersAlive:
-                self.labelWarn = "REINFORCEMENTS INCOMING"
+            LABEL = None
 
+            if self.reinforcersAlive:
+                LABEL = "REINFORCEMENTS INCOMING"
             elif self.playerInRestricted:
-                self.labelWarn = "RESTRICTED AREA"
+                LABEL = "RESTRICTED AREA"
             elif (not self.enemiesSpottedPlayer and not self.player.holster):
-                self.labelWarn = "WEAPON VISIBLE"
+                LABEL = "WEAPON VISIBLE"
+
+            if LABEL and LABEL != getattr(self, "labelWarn", None):
+                self.areaAnim = 0.01
+
+            if LABEL:
+                self.labelWarn = LABEL
 
             baseA = self.infoFont.render(self.labelWarn, True, (255, 80, 80)).convert_alpha()
             tA = 1 - (1 - self.areaAnim)**3
@@ -903,6 +826,10 @@ class App:
 
         pygame.draw.rect(self.screen, [255,255,255], loadRect)
 
+        if hasattr(self, "infoFont"):
+            t = self.infoFont.render(f"Memory usage: {self.currMemory} MB", True, [255,255,255])
+            self.screen.blit(t, self.res/2 - v2(t.get_size())/2 + [0, 140])
+
         pygame.display.flip()
         self.dt = self.clock.tick(30) / 1000.0
 
@@ -922,6 +849,9 @@ class App:
             
 
             if self.loading:
+
+                self.currMemory = int(self.process.memory_info().rss / 1024**2)
+
                 self.loadRender()
                 continue
 
@@ -948,7 +878,7 @@ class App:
             
             #self.handleMusic()
 
-            self.spawnEnemies()
+            #self.spawnEnemies()
 
             
 
@@ -1021,11 +951,15 @@ class App:
                 x.tick()
                 x.render(self.screen)
 
+            look_angle = self.getAngleFrom(self.player.pos, self.inverseConvertPos(self.mouse_pos))
+
             poly = los_draw(
                 self.los_surf,     # shape: self.res
                 self.player.pos * self.RENDER_SCALE,   # world space
                 self.camPD * self.RENDER_SCALE - self.res/2,        # world camera
                 self.effective_los_walls,    # Converted to render scale
+                #look_angle = look_angle,
+                #fov = math.radians(120),
                 debug=self.debugStuff
             )
 
@@ -1133,10 +1067,19 @@ class App:
 
             self.debugText(f"FPS: {self.fps:.0f}")
             self.debugText(f"TIME ON LOS: {lostime:.1f}ms")
+            #if poly:
+            #    self.debugText(f"VERTICES: {len(poly)}")
             #if self.DOLIGHTS:
+
+            if self.debugStuff:
+                for x in range(len(poly)):
+                    p1 = poly[x]
+                    p2 = poly[(x+1)%len(poly)]
+                    pygame.draw.line(self.screen, (0,255,255), p1, p2, width=2)
+
             #    
             pygame.display.flip()
-            self.dt = self.clock.tick(180) / 1000.0
+            self.dt = self.clock.tick() / 1000.0
             self.dt = min(0.1, self.dt)
 
             self.fps = self.clock.get_fps() * 0.01 + self.fps * 0.99
